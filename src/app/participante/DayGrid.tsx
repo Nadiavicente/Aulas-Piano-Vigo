@@ -89,15 +89,11 @@ export function DayGrid({
         <p className="text-sm text-ink/60">
           Hasta {maxHorasDia}h en 1-4 aulas. Ya tienes {totalHoy} de {maxHorasDia}.
         </p>
+        <p className="mt-1 text-sm font-medium text-gold">
+          ⚠️ Debes pulsar &quot;Confirmar reserva del día&quot; en cada día por separado — si no,
+          esas horas no quedarán guardadas.
+        </p>
       </div>
-
-      <button
-        onClick={confirmar}
-        disabled={totalSeleccionadas === 0 || pending}
-        className="w-full rounded-md bg-ink px-4 py-3 text-sm font-medium text-gold-light transition hover:bg-ink-light disabled:cursor-not-allowed disabled:bg-ink/20 disabled:text-ink/40 sm:w-fit"
-      >
-        {pending ? "Confirmando…" : "Confirmar reserva del día"}
-      </button>
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink/60">
         <Legend color="bg-slot-free/40 border border-slot-free" label="Libre" />
@@ -185,6 +181,15 @@ export function DayGrid({
                       </button>
                     );
                   })}
+                  <button
+                    onClick={confirmar}
+                    disabled={totalSeleccionadas === 0 || pending}
+                    className="mt-1 w-full rounded-md bg-ink px-4 py-3 text-sm font-medium text-gold-light transition hover:bg-ink-light disabled:cursor-not-allowed disabled:bg-ink/20 disabled:text-ink/40"
+                  >
+                    {pending
+                      ? "Confirmando…"
+                      : `Confirmar reserva del día${totalSeleccionadas > 0 ? ` (${totalSeleccionadas}h)` : ""}`}
+                  </button>
                 </div>
               )}
             </div>
