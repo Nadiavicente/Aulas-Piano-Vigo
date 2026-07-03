@@ -23,21 +23,16 @@ export function DayGrid({
 }) {
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const horas = useMemo(() => {
-    const set = new Set(day.slots.map((s) => s.hora));
-    return [...set].sort();
-  }, [day.slots]);
-
-  const roomsByHora = useMemo(() => {
+  const slotsByRoom = useMemo(() => {
     const map = new Map<string, (typeof day.slots)[number][]>();
-    for (const hora of horas) map.set(hora, []);
-    for (const s of day.slots) map.get(s.hora)!.push(s);
+    for (const room of rooms) map.set(room.id, []);
+    for (const s of day.slots) map.get(s.room_id)?.push(s);
+    for (const list of map.values()) list.sort((a, b) => a.hora.localeCompare(b.hora));
     return map;
-  }, [day.slots, horas]);
-
-  const roomsById = useMemo(() => new Map(rooms.map((r) => [r.id, r])), [rooms]);
+  }, [day.slots, rooms]);
 
   const restantes = maxHorasDia - day.horas_reservadas_mias - Object.keys(selected).length;
   const aulasDistintas = new Set(Object.values(selected)).size;
@@ -123,57 +118,75 @@ export function DayGrid({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex flex-col gap-3">
-        {horas.map((hora) => {
-          const slots = roomsByHora.get(hora) ?? [];
+      <div className="flex flex-col gap-2">
+        {rooms.map((room) => {
+          const slots = slotsByRoom.get(room.id) ?? [];
           const libres = slots.filter((s) => s.status === "libre").length;
+          const misHoras = slots.filter(
+            (s) => s.status === "mia" || selected[s.hora] === room.id
+          ).length;
+          const isExpanded = expandedRoomId === room.id;
 
           return (
-            <div key={hora} className="rounded-lg border border-ink/10 p-2">
-              <div className="mb-2 flex items-baseline justify-between px-1">
-                <span className="text-sm font-medium text-ink">
-                  {formatHora(hora)}–{formatHora(minutesToTime(timeToMinutes(hora) + 60))}
+            <div key={room.id} className="rounded-lg border border-ink/10">
+              <button
+                onClick={() => setExpandedRoomId(isExpanded ? null : room.id)}
+                className="flex w-full items-center justify-between px-3 py-3 text-left"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="font-medium text-ink">Aula {room.numero}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-ink/40">
+                    Piano de {room.tipo_piano}
+                  </span>
+                  {misHoras > 0 && (
+                    <span className="rounded-full bg-slot-mine px-2 py-0.5 text-[10px] font-medium text-white">
+                      {misHoras}h tuyas
+                    </span>
+                  )}
                 </span>
-                <span className="text-xs text-ink/40">{libres} libres</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {slots.map((slot) => {
-                  const room = roomsById.get(slot.room_id)!;
-                  const isPending = selected[hora] === slot.room_id;
-                  const status = slot.status;
+                <span className="flex items-center gap-2 text-xs text-ink/40">
+                  {libres} libres
+                  <span className={`transition ${isExpanded ? "rotate-180" : ""}`}>▾</span>
+                </span>
+              </button>
 
-                  let cellClass =
-                    "border-slot-free/50 bg-slot-free/10 text-ink hover:bg-slot-free/25 cursor-pointer";
-                  let mark = "";
-                  if (status === "mia") {
-                    cellClass = "border-slot-mine bg-slot-mine text-white";
-                    mark = "✓";
-                  } else if (status === "ocupada") {
-                    cellClass = "border-slot-taken/50 bg-slot-taken/20 text-ink/40 cursor-not-allowed";
-                  } else if (status === "bloqueada") {
-                    cellClass = "slot-blocked cursor-not-allowed border-transparent";
-                  } else if (isPending) {
-                    cellClass = "border-gold bg-gold text-ink ring-2 ring-gold-light cursor-pointer";
-                    mark = "✓";
-                  }
+              {isExpanded && (
+                <div className="flex flex-wrap gap-1.5 border-t border-ink/5 p-3">
+                  {slots.map((slot) => {
+                    const isPending = selected[slot.hora] === room.id;
+                    const status = slot.status;
 
-                  return (
-                    <button
-                      key={slot.room_id}
-                      onClick={() => toggle(hora, slot.room_id, status)}
-                      disabled={status === "ocupada" || status === "bloqueada"}
-                      className={`flex h-14 w-14 flex-none flex-col items-center justify-center rounded-md border text-xs font-medium transition ${cellClass}`}
-                    >
-                      <span>{mark || room.numero}</span>
-                      {!mark && (
-                        <span className="text-[9px] font-normal uppercase tracking-tight opacity-60">
-                          {room.tipo_piano}
+                    let cellClass =
+                      "border-slot-free/50 bg-slot-free/10 text-ink hover:bg-slot-free/25 cursor-pointer";
+                    let mark: string | null = null;
+                    if (status === "mia") {
+                      cellClass = "border-slot-mine bg-slot-mine text-white";
+                      mark = "✓";
+                    } else if (status === "ocupada") {
+                      cellClass = "border-slot-taken/50 bg-slot-taken/20 text-ink/40 cursor-not-allowed";
+                    } else if (status === "bloqueada") {
+                      cellClass = "slot-blocked cursor-not-allowed border-transparent";
+                    } else if (isPending) {
+                      cellClass = "border-gold bg-gold text-ink ring-2 ring-gold-light cursor-pointer";
+                      mark = "✓";
+                    }
+
+                    return (
+                      <button
+                        key={slot.hora}
+                        onClick={() => toggle(slot.hora, room.id, status)}
+                        disabled={status === "ocupada" || status === "bloqueada"}
+                        className={`flex h-14 w-20 flex-none flex-col items-center justify-center gap-0.5 rounded-md border text-xs font-medium transition ${cellClass}`}
+                      >
+                        <span>
+                          {formatHora(slot.hora)}–{formatHora(minutesToTime(timeToMinutes(slot.hora) + 60))}
                         </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                        {mark && <span>{mark}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
