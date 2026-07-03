@@ -1,52 +1,42 @@
-import { formatDia, formatHora } from "@/lib/schedule";
-import type { Round, Room, ParticipantPerformance } from "@/lib/types";
-import type { DayState } from "@/lib/booking";
-import { DayGrid } from "./DayGrid";
+"use client";
 
-export function RoundBooking({
-  round,
-  rooms,
-  days,
-  performance,
-}: {
-  round: Round;
-  rooms: Room[];
-  days: DayState[];
-  performance: ParticipantPerformance | null;
-}) {
+import { useState } from "react";
+import { formatDia } from "@/lib/schedule";
+import { DayGrid } from "./DayGrid";
+import type { RondaData } from "./ParticipanteApp";
+
+export function RoundBooking({ data }: { data: RondaData }) {
+  const { round, rooms, days, performance } = data;
+  const [dia, setDia] = useState(days[0]?.dia);
+
+  const day = days.find((d) => d.dia === dia);
+
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-baseline justify-between border-b border-ink/10 pb-2">
-        <h2 className="font-serif text-2xl font-semibold text-ink">{round.nombre}</h2>
-        <span className="text-sm text-ink/50">
-          Máximo {round.max_horas_dia}h/día · hasta 4 aulas distintas
-        </span>
+      <div className="flex flex-wrap gap-2">
+        {days.map((d) => (
+          <button
+            key={d.dia}
+            onClick={() => setDia(d.dia)}
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium capitalize transition ${
+              dia === d.dia ? "border-gold bg-gold/10 text-ink" : "border-ink/15 text-ink/70 hover:border-ink/30"
+            }`}
+          >
+            {formatDia(d.dia)}
+          </button>
+        ))}
       </div>
 
-      {days.map((day) => {
-        const actuaEsteDia =
-          performance?.performance_day === day.dia && performance?.performance_hour;
-
-        return (
-          <div key={day.dia} className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-lg font-medium capitalize text-ink">{formatDia(day.dia)}</h3>
-              <span className="text-sm text-ink/60">
-                {day.horas_reservadas_mias} / {round.max_horas_dia} horas reservadas
-              </span>
-            </div>
-
-            {actuaEsteDia && (
-              <p className="rounded-md bg-gold/10 px-3 py-2 text-sm text-ink/80">
-                Actúas este día a las {formatHora(performance!.performance_hour!)}. Esto es
-                solo informativo: conservas tus horas de estudio completas ese día.
-              </p>
-            )}
-
-            <DayGrid roundId={round.id} dia={day.dia} rooms={rooms} day={day} maxHorasDia={round.max_horas_dia} />
-          </div>
-        );
-      })}
+      {day && (
+        <DayGrid
+          roundId={round.id}
+          dia={day.dia}
+          rooms={rooms}
+          day={day}
+          maxHorasDia={round.max_horas_dia}
+          performance={performance}
+        />
+      )}
     </section>
   );
 }
