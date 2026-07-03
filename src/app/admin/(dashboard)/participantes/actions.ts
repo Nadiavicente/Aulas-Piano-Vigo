@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { verifyAdminSession } from "@/lib/dal";
+import { redirect } from "next/navigation";
 import {
   updateParticipantRounds,
   regenerateParticipantPassword,
   createParticipant,
   adminAssignSlot,
   adminRemoveBooking,
+  deleteParticipant,
 } from "@/lib/admin";
 import { BookingError } from "@/lib/booking";
 import type { RoundId } from "@/lib/types";
@@ -59,6 +61,13 @@ export async function actionAdminAssignSlot(
     if (err instanceof BookingError) return { ok: false, error: err.message };
     return { ok: false, error: "Error desconocido" };
   }
+}
+
+export async function actionDeleteParticipant(participantId: string) {
+  await verifyAdminSession();
+  await deleteParticipant(participantId);
+  revalidatePath("/admin/participantes");
+  redirect("/admin/participantes");
 }
 
 export async function actionAdminRemoveBooking(

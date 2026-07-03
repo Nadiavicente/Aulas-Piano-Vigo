@@ -116,6 +116,14 @@ export async function updateParticipantRounds(participantId: string, rondas: Rou
   if (error) throw new Error(error.message);
 }
 
+export async function deleteParticipant(participantId: string) {
+  const supabase = getSupabaseAdmin();
+  // Las reservas, actuaciones y el historial de emails de este participante
+  // se eliminan en cascada (ON DELETE CASCADE / SET NULL en el esquema).
+  const { error } = await supabase.from("participants").delete().eq("id", participantId);
+  if (error) throw new Error(error.message);
+}
+
 export async function regenerateParticipantPassword(participantId: string): Promise<string> {
   const supabase = getSupabaseAdmin();
   const newPassword = generateReadablePassword();

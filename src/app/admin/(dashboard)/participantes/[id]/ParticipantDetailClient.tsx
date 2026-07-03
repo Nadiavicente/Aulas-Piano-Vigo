@@ -10,6 +10,7 @@ import {
   actionRegeneratePassword,
   actionAdminAssignSlot,
   actionAdminRemoveBooking,
+  actionDeleteParticipant,
 } from "../actions";
 
 export function ParticipantDetailClient({
@@ -29,11 +30,14 @@ export function ParticipantDetailClient({
 }) {
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="font-serif text-2xl font-semibold text-ink">{participant.nombre}</h1>
-        <p className="text-ink/60">
-          {participant.email} {participant.codigo && `· código ${participant.codigo}`}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-serif text-2xl font-semibold text-ink">{participant.nombre}</h1>
+          <p className="text-ink/60">
+            {participant.email} {participant.codigo && `· código ${participant.codigo}`}
+          </p>
+        </div>
+        <DeleteParticipantButton participantId={participant.id} nombre={participant.nombre} />
       </div>
 
       <RoundsSection participant={participant} rounds={rounds} />
@@ -270,5 +274,27 @@ function AssignSection({
       {ok && <p className="text-sm text-slot-free">Asignado correctamente.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </section>
+  );
+}
+
+function DeleteParticipantButton({ participantId, nombre }: { participantId: string; nombre: string }) {
+  const [pending, startTransition] = useTransition();
+
+  function handleDelete() {
+    const confirmed = window.confirm(
+      `¿Seguro que quieres eliminar a "${nombre}"? Se borrarán también todas sus reservas. Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+    startTransition(() => actionDeleteParticipant(participantId));
+  }
+
+  return (
+    <button
+      onClick={handleDelete}
+      disabled={pending}
+      className="shrink-0 rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+    >
+      {pending ? "Eliminando…" : "Eliminar participante"}
+    </button>
   );
 }

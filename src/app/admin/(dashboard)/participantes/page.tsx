@@ -2,6 +2,7 @@ import Link from "next/link";
 import { searchParticipants } from "@/lib/admin";
 import { getAllRounds } from "@/lib/booking";
 import { CreateParticipantForm } from "./CreateParticipantForm";
+import { DeleteParticipantInline } from "./DeleteParticipantInline";
 
 export default async function ParticipantesPage({
   searchParams,
@@ -47,9 +48,12 @@ export default async function ParticipantesPage({
                 <td className="px-3 py-2 text-ink/70">{p.email}</td>
                 <td className="px-3 py-2 text-ink/60">{p.rondas_clasificado.join(", ") || "—"}</td>
                 <td className="px-3 py-2 text-right">
-                  <Link href={`/admin/participantes/${p.id}`} className="text-ink underline">
-                    Ver ficha
-                  </Link>
+                  <div className="flex justify-end gap-3">
+                    <Link href={`/admin/participantes/${p.id}`} className="text-ink underline">
+                      Ver ficha
+                    </Link>
+                    <DeleteParticipantInline participantId={p.id} nombre={p.nombre} />
+                  </div>
                 </td>
               </tr>
             ))}
