@@ -29,6 +29,7 @@ export function RoundBooking({ data }: { data: RondaData }) {
 
       {day && (
         <DayGrid
+          key={day.dia}
           roundId={round.id}
           dia={day.dia}
           rooms={rooms}
