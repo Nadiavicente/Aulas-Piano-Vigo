@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Identidad visual del concurso */
+  --color-ink: #1b1310;       /* marrón muy oscuro, casi negro */
+  --color-ink-light: #2a1f1a;
+  --color-gold: #c8a24a;      /* dorado de acento */
+  --color-gold-light: #e4c887;
+
+  --color-slot-free: #16a34a;      /* verde: libre */
+  --color-slot-mine: #2563eb;      /* azul: tu selección */
+  --color-slot-taken: #dc2626;     /* rojo: ocupada */
+  --color-slot-blocked: #9ca3af;   /* gris: bloqueada */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-ink: var(--color-ink);
+  --color-ink-light: var(--color-ink-light);
+  --color-gold: var(--color-gold);
+  --color-gold-light: var(--color-gold-light);
+  --color-slot-free: var(--color-slot-free);
+  --color-slot-mine: var(--color-slot-mine);
+  --color-slot-taken: var(--color-slot-taken);
+  --color-slot-blocked: var(--color-slot-blocked);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-playfair);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Franja bloqueada: gris rayado en diagonal */
+.slot-blocked {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-slot-blocked),
+    var(--color-slot-blocked) 6px,
+    #e5e7eb 6px,
+    #e5e7eb 12px
+  );
+}
