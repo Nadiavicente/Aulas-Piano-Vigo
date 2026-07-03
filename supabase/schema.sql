@@ -118,7 +118,7 @@ create table email_log (
   participant_id uuid references participants(id) on delete set null,
   email_to text not null,
   subject text not null,
-  type text not null check (type in ('booking_confirmation', 'pdf_assignment')),
+  type text not null check (type in ('booking_confirmation', 'pdf_assignment', 'credentials')),
   status text not null check (status in ('sent', 'failed')),
   error text,
   payload jsonb,

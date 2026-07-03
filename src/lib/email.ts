@@ -2,6 +2,7 @@ import "server-only";
 import { Resend } from "resend";
 import { getSupabaseAdmin } from "./supabase";
 import { formatDia, formatHora } from "./schedule";
+import { generateLoginQrDataUrl, getLoginUrl } from "./qrcode";
 import type { Booking, Room, Round, Participant } from "./types";
 
 function getResend() {
@@ -26,7 +27,7 @@ async function sendAndLog(params: {
   to: string;
   subject: string;
   html: string;
-  type: "booking_confirmation" | "pdf_assignment";
+  type: "booking_confirmation" | "pdf_assignment" | "credentials";
   payload?: unknown;
 }): Promise<SendResult> {
   const supabase = getSupabaseAdmin();
@@ -125,5 +126,35 @@ export async function sendBookingConfirmationEmail(
     html,
     type: "booking_confirmation",
     payload: { round_id: round.id, booking_ids: bookings.map((b) => b.id) },
+  });
+}
+
+export async function sendWelcomeEmail(participant: Participant, password: string): Promise<SendResult> {
+  const loginUrl = getLoginUrl(participant.email);
+  const qrDataUrl = await generateLoginQrDataUrl(participant.email);
+
+  const html = `
+    <div style="font-family: sans-serif; color: #1b1310;">
+      <h2>Acceso al X Concurso Internacional de Piano Ciudad de Vigo</h2>
+      <p>Hola ${participant.nombre},</p>
+      <p>Ya puedes acceder a la plataforma de reserva de aulas de estudio con estos datos:</p>
+      <p>
+        Correo: <strong>${participant.email}</strong><br/>
+        Contraseña: <strong>${password}</strong>
+      </p>
+      <p><a href="${loginUrl}" style="color:#c8a24a;">Entrar a la plataforma</a></p>
+      <p>O escanea este código QR desde el móvil para entrar directamente:</p>
+      <img src="${qrDataUrl}" alt="Código QR de acceso" width="180" height="180" />
+      <p>X Concurso Internacional de Piano Ciudad de Vigo</p>
+    </div>
+  `;
+
+  return sendAndLog({
+    participantId: participant.id,
+    to: participant.email,
+    subject: "Acceso a la plataforma de reservas — X Concurso Internacional de Piano Ciudad de Vigo",
+    html,
+    type: "credentials",
+    payload: { reason: "participant_created" },
   });
 }

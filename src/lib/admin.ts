@@ -1,6 +1,7 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase";
 import { hashPassword, generateReadablePassword } from "./password";
+import { sendWelcomeEmail } from "./email";
 import { BookingError } from "./booking";
 import type { RoundId, TipoPiano, Motivo, Participant, Room, BlockedSlot } from "./types";
 
@@ -141,7 +142,7 @@ export async function createParticipant(params: {
   email: string;
   codigo?: string;
   rondas: RoundId[];
-}): Promise<{ participant: Participant; password: string }> {
+}): Promise<{ participant: Participant; password: string; emailEnviado: boolean }> {
   const supabase = getSupabaseAdmin();
   const password = generateReadablePassword();
   const hash = await hashPassword(password);
@@ -159,7 +160,13 @@ export async function createParticipant(params: {
     .single();
 
   if (error) throw new Error(error.message);
-  return { participant: data as Participant, password };
+
+  const participant = data as Participant;
+  // El envío del correo de bienvenida no debe hacer fallar el alta del
+  // participante si falla; sendWelcomeEmail ya registra el fallo en email_log.
+  const emailResult = await sendWelcomeEmail(participant, password);
+
+  return { participant, password, emailEnviado: emailResult.ok };
 }
 
 // Asignación manual de un nombre a un horario/aula concreto (sobrescribe si había otra reserva)

@@ -77,7 +77,7 @@ export interface EmailLogEntry {
   participant_id: string | null
   email_to: string
   subject: string
-  type: 'booking_confirmation' | 'pdf_assignment'
+  type: 'booking_confirmation' | 'pdf_assignment' | 'credentials'
   status: 'sent' | 'failed'
   error: string | null
   payload: unknown

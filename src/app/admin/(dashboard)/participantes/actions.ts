@@ -33,12 +33,12 @@ export async function actionCreateParticipant(
   email: string,
   codigo: string,
   rondas: RoundId[]
-): Promise<{ ok: boolean; error?: string; password?: string; id?: string }> {
+): Promise<{ ok: boolean; error?: string; password?: string; id?: string; emailEnviado?: boolean }> {
   await verifyAdminSession();
   try {
-    const { participant, password } = await createParticipant({ nombre, email, codigo, rondas });
+    const { participant, password, emailEnviado } = await createParticipant({ nombre, email, codigo, rondas });
     revalidatePath("/admin/participantes");
-    return { ok: true, password, id: participant.id };
+    return { ok: true, password, id: participant.id, emailEnviado };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
   }
