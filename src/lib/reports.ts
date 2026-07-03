@@ -1,4 +1,5 @@
 import "server-only";
+import ExcelJS from "exceljs";
 import { getSupabaseAdmin } from "./supabase";
 import { formatDia, formatHora } from "./schedule";
 import type { RoundId, Booking, Room, Participant } from "./types";
@@ -66,22 +67,31 @@ export async function getReportByParticipant(participantId: string): Promise<Rep
   return joinRows((bookings ?? []) as Booking[], (rooms ?? []) as Room[], (participants ?? []) as Participant[]);
 }
 
-function csvEscape(value: string): string {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
+export async function rowsToXlsx(rows: ReportRow[], sheetName = "Informe"): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(sheetName);
 
-export function rowsToCsv(rows: ReportRow[]): string {
-  const header = ["Día", "Hora", "Aula", "Participante", "Correo", "Código"];
-  const lines = [header.join(",")];
+  sheet.columns = [
+    { header: "Día", key: "dia", width: 22 },
+    { header: "Hora", key: "hora", width: 10 },
+    { header: "Aula", key: "aula", width: 10 },
+    { header: "Participante", key: "participante", width: 28 },
+    { header: "Correo", key: "correo", width: 32 },
+    { header: "Código", key: "codigo", width: 14 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+
   for (const r of rows) {
-    lines.push(
-      [formatDia(r.dia), formatHora(r.hora), r.aula, r.participante, r.correo, r.codigo]
-        .map(csvEscape)
-        .join(",")
-    );
+    sheet.addRow({
+      dia: formatDia(r.dia),
+      hora: formatHora(r.hora),
+      aula: r.aula,
+      participante: r.participante,
+      correo: r.correo,
+      codigo: r.codigo,
+    });
   }
-  return "﻿" + lines.join("\n"); // BOM para que Excel detecte UTF-8
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }

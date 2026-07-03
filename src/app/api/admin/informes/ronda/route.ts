@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/apiAuth";
-import { getReportByRound, rowsToCsv } from "@/lib/reports";
+import { getReportByRound, rowsToXlsx } from "@/lib/reports";
 import type { RoundId } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
@@ -12,12 +12,12 @@ export async function GET(req: NextRequest) {
   if (!roundId) return NextResponse.json({ error: "Falta el parámetro round" }, { status: 400 });
 
   const rows = await getReportByRound(roundId, dia);
-  const csv = rowsToCsv(rows);
+  const xlsx = await rowsToXlsx(rows, roundId);
 
-  return new NextResponse(csv, {
+  return new NextResponse(new Uint8Array(xlsx), {
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="informe-${roundId}${dia ? `-${dia}` : ""}.csv"`,
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="informe-${roundId}${dia ? `-${dia}` : ""}.xlsx"`,
     },
   });
 }

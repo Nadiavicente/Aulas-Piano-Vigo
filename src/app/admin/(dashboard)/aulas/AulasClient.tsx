@@ -185,12 +185,18 @@ function BlockedSlotsSection({
   blockedByRound: Record<string, BlockedWithRoom[]>;
 }) {
   const [roundId, setRoundId] = useState<RoundId | undefined>(rounds[0]?.id);
+  const [dia, setDia] = useState<string | undefined>(rounds[0]?.dias[0]);
   const [pending, startTransition] = useTransition();
 
   const round = rounds.find((r) => r.id === roundId);
   const roomsForRound = rooms.filter((r) => roundId && r.round_ids.includes(roundId));
   const horas = round ? listHourSlots(round.hora_inicio, round.hora_fin) : [];
-  const blocked = (roundId && blockedByRound[roundId]) || [];
+  const blocked = ((roundId && blockedByRound[roundId]) || []).filter((b) => !dia || b.dia === dia);
+
+  function selectRound(r: Round) {
+    setRoundId(r.id);
+    setDia(r.dias[0]);
+  }
 
   return (
     <section className="flex flex-col gap-3">
@@ -200,7 +206,7 @@ function BlockedSlotsSection({
         {rounds.map((r) => (
           <button
             key={r.id}
-            onClick={() => setRoundId(r.id)}
+            onClick={() => selectRound(r)}
             className={`rounded-md px-3 py-1.5 text-sm ${
               roundId === r.id ? "bg-ink text-gold-light" : "bg-ink/5 text-ink/70"
             }`}
@@ -211,9 +217,24 @@ function BlockedSlotsSection({
       </div>
 
       {round && (
+        <div className="flex flex-wrap gap-2">
+          {round.dias.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDia(d)}
+              className={`rounded-full px-3 py-1 text-sm capitalize ${
+                dia === d ? "bg-gold text-ink" : "bg-ink/5 text-ink/70 hover:bg-ink/10"
+              }`}
+            >
+              {formatDia(d)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {round && dia && (
         <form
           action={(fd) => {
-            const dia = String(fd.get("dia"));
             const room_id = String(fd.get("room_id"));
             const hora = String(fd.get("hora"));
             const motivo = fd.get("motivo") as Motivo;
@@ -221,15 +242,6 @@ function BlockedSlotsSection({
           }}
           className="flex flex-wrap items-end gap-3 rounded-md border border-ink/10 bg-ink/[0.02] p-3"
         >
-          <Field label="Día">
-            <select name="dia" className="rounded border border-ink/20 px-2 py-1 text-sm">
-              {round.dias.map((d) => (
-                <option key={d} value={d}>
-                  {formatDia(d)}
-                </option>
-              ))}
-            </select>
-          </Field>
           <Field label="Aula">
             <select name="room_id" className="rounded border border-ink/20 px-2 py-1 text-sm">
               {roomsForRound.map((r) => (

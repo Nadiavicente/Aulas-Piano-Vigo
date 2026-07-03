@@ -18,48 +18,64 @@ export function RoundReportForms({
   const round = rounds.find((r) => r.id === roundId);
   const rooms = roundId ? roomsByRound[roundId] ?? [] : [];
 
+  function selectRound(id: RoundId) {
+    setRoundId(id);
+    setDia("");
+    setRoomId("");
+  }
+
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-lg font-medium text-ink">Informes por ronda</h2>
 
       <div className="flex flex-col gap-1">
         <label className="text-xs text-ink/60">Ronda</label>
-        <select
-          value={roundId}
-          onChange={(e) => {
-            setRoundId(e.target.value as RoundId);
-            setDia("");
-            setRoomId("");
-          }}
-          className="w-fit rounded border border-ink/20 px-2 py-1 text-sm"
-        >
+        <div className="flex flex-wrap gap-2">
           {rounds.map((r) => (
-            <option key={r.id} value={r.id}>
+            <button
+              key={r.id}
+              onClick={() => selectRound(r.id)}
+              className={`rounded-md px-3 py-1.5 text-sm ${
+                roundId === r.id ? "bg-ink text-gold-light" : "bg-ink/5 text-ink/70 hover:bg-ink/10"
+              }`}
+            >
               {r.nombre}
-            </option>
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink/60">Día (opcional)</label>
-          <select value={dia} onChange={(e) => setDia(e.target.value)} className="rounded border border-ink/20 px-2 py-1 text-sm">
-            <option value="">Todos los días</option>
-            {round?.dias.map((d) => (
-              <option key={d} value={d}>
-                {formatDia(d)}
-              </option>
-            ))}
-          </select>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-ink/60">Día</label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setDia("")}
+            className={`rounded-full px-3 py-1 text-sm ${
+              dia === "" ? "bg-gold text-ink" : "bg-ink/5 text-ink/70 hover:bg-ink/10"
+            }`}
+          >
+            Todos los días
+          </button>
+          {round?.dias.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDia(d)}
+              className={`rounded-full px-3 py-1 text-sm capitalize ${
+                dia === d ? "bg-gold text-ink" : "bg-ink/5 text-ink/70 hover:bg-ink/10"
+              }`}
+            >
+              {formatDia(d)}
+            </button>
+          ))}
         </div>
-        <a
-          href={`/api/admin/informes/ronda?round=${roundId}${dia ? `&dia=${dia}` : ""}`}
-          className="rounded bg-ink px-3 py-1.5 text-sm text-gold-light"
-        >
-          Descargar CSV por día
-        </a>
       </div>
+
+      <a
+        href={`/api/admin/informes/ronda?round=${roundId}${dia ? `&dia=${dia}` : ""}`}
+        className="w-fit rounded bg-ink px-3 py-1.5 text-sm text-gold-light"
+      >
+        Descargar Excel por día
+      </a>
 
       <div className="flex flex-wrap items-end gap-4">
         <div className="flex flex-col gap-1">
@@ -80,7 +96,7 @@ export function RoundReportForms({
             roomId ? "bg-ink text-gold-light" : "pointer-events-none bg-ink/20 text-white/50"
           }`}
         >
-          Descargar CSV por aula
+          Descargar Excel por aula
         </a>
       </div>
     </section>

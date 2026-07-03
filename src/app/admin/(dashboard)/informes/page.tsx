@@ -49,7 +49,7 @@ export default async function InformesPage({
                     href={`/api/admin/informes/participante?id=${p.id}`}
                     className="text-ink underline"
                   >
-                    CSV
+                    Excel
                   </a>
                 </div>
               </li>

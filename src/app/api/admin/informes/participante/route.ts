@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/apiAuth";
-import { getReportByParticipant, rowsToCsv } from "@/lib/reports";
+import { getReportByParticipant, rowsToXlsx } from "@/lib/reports";
 
 export async function GET(req: NextRequest) {
   const { response } = await requireAdminApi();
@@ -10,12 +10,12 @@ export async function GET(req: NextRequest) {
   if (!participantId) return NextResponse.json({ error: "Falta el parámetro id" }, { status: 400 });
 
   const rows = await getReportByParticipant(participantId);
-  const csv = rowsToCsv(rows);
+  const xlsx = await rowsToXlsx(rows, "Participante");
 
-  return new NextResponse(csv, {
+  return new NextResponse(new Uint8Array(xlsx), {
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="informe-participante.csv"`,
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="informe-participante.xlsx"`,
     },
   });
 }
