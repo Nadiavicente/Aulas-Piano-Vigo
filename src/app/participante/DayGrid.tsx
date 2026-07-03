@@ -30,11 +30,14 @@ export function DayGrid({
     return [...set].sort();
   }, [day.slots]);
 
-  const statusByKey = useMemo(() => {
-    const map = new Map<string, (typeof day.slots)[number]>();
-    for (const s of day.slots) map.set(`${s.hora}|${s.room_id}`, s);
+  const roomsByHora = useMemo(() => {
+    const map = new Map<string, (typeof day.slots)[number][]>();
+    for (const hora of horas) map.set(hora, []);
+    for (const s of day.slots) map.get(s.hora)!.push(s);
     return map;
-  }, [day.slots]);
+  }, [day.slots, horas]);
+
+  const roomsById = useMemo(() => new Map(rooms.map((r) => [r.id, r])), [rooms]);
 
   const restantes = maxHorasDia - day.horas_reservadas_mias - Object.keys(selected).length;
   const aulasDistintas = new Set(Object.values(selected)).size;
@@ -83,100 +86,97 @@ export function DayGrid({
   const totalHoy = day.horas_reservadas_mias + totalSeleccionadas;
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-ink/10 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-serif text-xl font-semibold capitalize text-ink">
-            Selecciona tus horas — {formatDia(dia)}
-          </h3>
-          <p className="text-sm text-ink/60">
-            Puedes elegir hasta {maxHorasDia} horas este día, en la(s) aula(s) que prefieras. Ya
-            tienes {totalHoy} de {maxHorasDia}.
-          </p>
-        </div>
-        <button
-          onClick={confirmar}
-          disabled={totalSeleccionadas === 0 || pending}
-          className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-gold-light transition hover:bg-ink-light disabled:cursor-not-allowed disabled:bg-ink/20 disabled:text-ink/40"
-        >
-          {pending ? "Confirmando…" : "Confirmar reserva del día"}
-        </button>
+    <div className="flex flex-col gap-4 rounded-xl border border-ink/10 p-3 sm:p-6">
+      <div>
+        <h3 className="font-serif text-lg font-semibold capitalize text-ink sm:text-xl">
+          Selecciona tus horas — {formatDia(dia)}
+        </h3>
+        <p className="text-sm text-ink/60">
+          Hasta {maxHorasDia}h en 1-4 aulas. Ya tienes {totalHoy} de {maxHorasDia}.
+        </p>
       </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-ink/60">
+      <button
+        onClick={confirmar}
+        disabled={totalSeleccionadas === 0 || pending}
+        className="w-full rounded-md bg-ink px-4 py-3 text-sm font-medium text-gold-light transition hover:bg-ink-light disabled:cursor-not-allowed disabled:bg-ink/20 disabled:text-ink/40 sm:w-fit"
+      >
+        {pending ? "Confirmando…" : "Confirmar reserva del día"}
+      </button>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink/60">
         <Legend color="bg-slot-free/40 border border-slot-free" label="Libre" />
         <Legend color="bg-slot-mine border border-slot-mine" label="Tu selección ✓" />
         <Legend color="bg-slot-taken/40 border border-slot-taken" label="Ocupada" />
-        <Legend color="slot-blocked" label="Bloqueada (jurado / admin)" />
+        <Legend color="slot-blocked" label="Bloqueada" />
       </div>
 
       {actuaEsteDia && (
         <p className="rounded-md bg-gold/10 px-3 py-2 text-sm text-ink/80">
-          🎹 Tu horario de actuación esta ronda es <strong>{formatDia(dia)} a las{" "}
-          {formatHora(performance!.performance_hour!)}</strong>. Tienes derecho a tus{" "}
-          {maxHorasDia} horas de estudio ese día igualmente — te recomendamos reservar al menos
-          una hora antes de tu actuación.
+          🎹 Tu horario de actuación esta ronda es{" "}
+          <strong>
+            {formatDia(dia)} a las {formatHora(performance!.performance_hour!)}
+          </strong>
+          . Tienes derecho a tus {maxHorasDia} horas de estudio ese día igualmente.
         </p>
       )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="overflow-x-auto rounded-lg border border-ink/10">
-        <table className="border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-medium text-ink/70">
-                Aula
-              </th>
-              {horas.map((h) => (
-                <th key={h} className="whitespace-nowrap px-2 py-2 text-center font-medium text-ink/70">
-                  {formatHora(h)}–{formatHora(minutesToTime(timeToMinutes(h) + 60))}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rooms.map((room) => (
-              <tr key={room.id} className="border-t border-ink/5">
-                <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1">
-                  <div className="font-medium text-ink">Aula {room.numero}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-ink/40">
-                    Piano de {room.tipo_piano}
-                  </div>
-                </td>
-                {horas.map((hora) => {
-                  const slot = statusByKey.get(`${hora}|${room.id}`);
-                  const status = slot?.status ?? "libre";
-                  const isPending = selected[hora] === room.id;
+      <div className="flex flex-col gap-3">
+        {horas.map((hora) => {
+          const slots = roomsByHora.get(hora) ?? [];
+          const libres = slots.filter((s) => s.status === "libre").length;
 
-                  let cellClass = "bg-slot-free/20 hover:bg-slot-free/40 cursor-pointer";
-                  let content = "";
+          return (
+            <div key={hora} className="rounded-lg border border-ink/10 p-2">
+              <div className="mb-2 flex items-baseline justify-between px-1">
+                <span className="text-sm font-medium text-ink">
+                  {formatHora(hora)}–{formatHora(minutesToTime(timeToMinutes(hora) + 60))}
+                </span>
+                <span className="text-xs text-ink/40">{libres} libres</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {slots.map((slot) => {
+                  const room = roomsById.get(slot.room_id)!;
+                  const isPending = selected[hora] === slot.room_id;
+                  const status = slot.status;
+
+                  let cellClass =
+                    "border-slot-free/50 bg-slot-free/10 text-ink hover:bg-slot-free/25 cursor-pointer";
+                  let mark = "";
                   if (status === "mia") {
-                    cellClass = "bg-slot-mine text-white";
-                    content = "✓";
+                    cellClass = "border-slot-mine bg-slot-mine text-white";
+                    mark = "✓";
                   } else if (status === "ocupada") {
-                    cellClass = "bg-slot-taken/70 text-white cursor-not-allowed";
+                    cellClass = "border-slot-taken/50 bg-slot-taken/20 text-ink/40 cursor-not-allowed";
                   } else if (status === "bloqueada") {
-                    cellClass = "slot-blocked cursor-not-allowed";
+                    cellClass = "slot-blocked cursor-not-allowed border-transparent";
                   } else if (isPending) {
-                    cellClass = "bg-gold text-ink ring-2 ring-gold-light cursor-pointer";
-                    content = "✓";
+                    cellClass = "border-gold bg-gold text-ink ring-2 ring-gold-light cursor-pointer";
+                    mark = "✓";
                   }
 
                   return (
-                    <td
-                      key={hora}
-                      onClick={() => toggle(hora, room.id, status)}
-                      className={`h-10 w-16 select-none text-center align-middle text-xs transition ${cellClass}`}
+                    <button
+                      key={slot.room_id}
+                      onClick={() => toggle(hora, slot.room_id, status)}
+                      disabled={status === "ocupada" || status === "bloqueada"}
+                      className={`flex h-14 w-14 flex-none flex-col items-center justify-center rounded-md border text-xs font-medium transition ${cellClass}`}
                     >
-                      {content}
-                    </td>
+                      <span>{mark || room.numero}</span>
+                      {!mark && (
+                        <span className="text-[9px] font-normal uppercase tracking-tight opacity-60">
+                          {room.tipo_piano}
+                        </span>
+                      )}
+                    </button>
                   );
                 })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <span className="text-xs text-ink/50">

@@ -31,7 +31,7 @@ export function ParticipanteApp({
     <div className="flex flex-col gap-6">
       <div>
         <p className="text-xs font-medium uppercase tracking-widest text-ink/40">Bienvenido/a</p>
-        <h1 className="font-serif text-3xl font-semibold text-ink">{nombre}</h1>
+        <h1 className="font-serif text-2xl font-semibold text-ink sm:text-3xl">{nombre}</h1>
       </div>
 
       <div className="flex flex-wrap gap-2">
