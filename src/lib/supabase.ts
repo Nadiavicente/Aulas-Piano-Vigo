@@ -18,11 +18,18 @@ export function getSupabaseAdmin() {
   })
 }
 
-// PostgREST (y por tanto Supabase) devuelve como mucho 1000 filas por
-// consulta salvo que se pida explícitamente un rango mayor. Con ~98
-// participantes × 4h × 3 días una ronda puede superar sin problema esas
-// 1000 reservas, así que cualquier consulta sin filtrar por participante
-// debe paginar con esta función en vez de un .select(...) directo.
+// PostgREST (y por tanto Supabase) devuelve como mucho "Max Rows" filas por
+// consulta (1000 por defecto en el panel de Supabase) salvo que se pida un
+// rango mayor explícitamente. Con ~98 participantes × 4h × 3 días una ronda
+// puede superar sin problema esa cifra, así que cualquier consulta sin
+// filtrar por participante debe paginar con esta función en vez de un
+// .select(...) directo.
+//
+// No asumimos ningún tamaño de página fijo: cada vuelta avanza tantas filas
+// como realmente llegaron (no un número fijo), y solo paramos cuando un
+// bloque vuelve vacío. Así funciona igual si alguien cambia el ajuste "Max
+// Rows" de Supabase a otro valor, y sigue funcionando aunque el volumen de
+// datos real crezca en el futuro.
 export async function fetchAllRows<T>(
   build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 ): Promise<T[]> {
@@ -35,8 +42,7 @@ export async function fetchAllRows<T>(
     if (error) throw new Error(error.message)
     if (!data || data.length === 0) break
     all = all.concat(data)
-    if (data.length < PAGE_SIZE) break
-    offset += PAGE_SIZE
+    offset += data.length
   }
 
   return all
