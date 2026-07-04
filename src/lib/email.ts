@@ -135,10 +135,19 @@ export async function sendBookingConfirmationEmail(
   bookings: Booking[],
   rooms: Room[]
 ): Promise<SendResult> {
+  // A partir de semifinales ya no es la primera ronda del participante, así
+  // que añadimos una felicitación por haber avanzado de fase antes del
+  // detalle de la reserva.
+  const felicitacion =
+    round.id !== "primera"
+      ? `<p>¡Enhorabuena por tu paso a la <strong>${round.nombre}</strong> del concurso!</p>`
+      : "";
+
   const html = `
     <div style="font-family: sans-serif; color: #1b1310;">
       <h2>Reserva confirmada — ${round.nombre}</h2>
       <p>Hola ${participant.nombre},</p>
+      ${felicitacion}
       <p>Tu reserva de aulas de estudio para <strong>${round.nombre}</strong> ha sido confirmada:</p>
       ${bookingsToHtml(bookings, rooms)}
       <p>X Concurso Internacional de Piano Ciudad de Vigo</p>
