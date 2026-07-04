@@ -96,29 +96,33 @@ export async function applyAutoAssignment(
     hora: string;
     source: "admin_auto";
   }[] = [];
-  const performanceRows: {
-    participant_id: string;
-    round_id: RoundId;
-    performance_day: string;
-    performance_hour: string | null;
-  }[] = [];
-  const summaries: AssignmentSummary[] = [];
-
-  for (const entry of entries) {
-    const participant = participantsById.get(entry.participant_id);
-    if (!participant) continue;
-
-    performanceRows.push({
-      participant_id: entry.participant_id,
+  const performanceRows = entries
+    .filter((e) => participantsById.has(e.participant_id))
+    .map((e) => ({
+      participant_id: e.participant_id,
       round_id: roundId,
-      performance_day: entry.dia,
-      performance_hour: entry.hora,
-    });
+      performance_day: e.dia,
+      performance_hour: e.hora,
+    }));
 
-    let totalHorasRonda = 0;
-    let faltaronAulas = false;
+  const acumulado = new Map<string, { totalHorasRonda: number; faltaronAulas: boolean }>();
+  for (const entry of entries) {
+    acumulado.set(entry.participant_id, { totalHorasRonda: 0, faltaronAulas: false });
+  }
 
-    for (const dia of round.dias) {
+  // Procesamos día a día (no participante a participante) y rotamos el
+  // orden en el que se atiende a cada uno en cada día. Con ~98 personas
+  // compitiendo por un aforo muy ajustado (30 aulas × 14h × 3 días para 4h/
+  // día cada una), procesar siempre en el mismo orden dejaría sin horas
+  // sistemáticamente a quien aparece al final del PDF, los 3 días seguidos.
+  round.dias.forEach((dia, dayIndex) => {
+    const offset = Math.floor((dayIndex * entries.length) / round.dias.length);
+    const ordenDelDia = [...entries.slice(offset), ...entries.slice(0, offset)];
+
+    for (const entry of ordenDelDia) {
+      const participant = participantsById.get(entry.participant_id);
+      if (!participant) continue;
+
       const performanceHora = dia === entry.dia ? entry.hora : null;
       const key = `${entry.participant_id}|${dia}`;
       const horasYaMias = misHorasPorDia.get(key) ?? new Set<string>();
@@ -158,22 +162,29 @@ export async function applyAutoAssignment(
           horasYaMias.add(hora);
           restantes--;
         }
-
-        if (restantes > 0) faltaronAulas = true;
       }
 
       misHorasPorDia.set(key, horasYaMias);
       misAulasPorDia.set(key, aulasDelDia);
-      totalHorasRonda += horasYaMias.size;
-    }
 
+      const acc = acumulado.get(entry.participant_id)!;
+      acc.totalHorasRonda += horasYaMias.size;
+      if (restantes > 0) acc.faltaronAulas = true;
+    }
+  });
+
+  const summaries: AssignmentSummary[] = [];
+  for (const entry of entries) {
+    const participant = participantsById.get(entry.participant_id);
+    if (!participant) continue;
+    const acc = acumulado.get(entry.participant_id)!;
     summaries.push({
       participant_id: participant.id,
       nombre: participant.nombre,
-      horas_asignadas: totalHorasRonda,
+      horas_asignadas: acc.totalHorasRonda,
       horas_totales_ronda: round.dias.length * round.max_horas_dia,
       email_enviado: false,
-      aviso: faltaronAulas
+      aviso: acc.faltaronAulas
         ? "No se pudo completar el máximo de horas algún día: no quedaban aulas libres."
         : undefined,
     });
