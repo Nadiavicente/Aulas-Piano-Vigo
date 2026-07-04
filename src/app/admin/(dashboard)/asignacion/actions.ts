@@ -85,7 +85,8 @@ export async function confirmAssignment(
   batchId: string,
   roundId: RoundId,
   rows: PdfAssignmentRow[],
-  crearNoCoincidencias = false
+  crearNoCoincidencias = false,
+  enviarCorreos = true
 ): Promise<ConfirmResult> {
   await verifyAdminSession();
 
@@ -105,11 +106,14 @@ export async function confirmAssignment(
       while (idx < pendientes.length) {
         const row = pendientes[idx++];
         try {
-          const { participant } = await createParticipant({
-            nombre: row.nombre || row.email.split("@")[0],
-            email: row.email,
-            rondas: [roundId],
-          });
+          const { participant } = await createParticipant(
+            {
+              nombre: row.nombre || row.email.split("@")[0],
+              email: row.email,
+              rondas: [roundId],
+            },
+            { enviarCorreo: enviarCorreos }
+          );
           row.participant_id = participant.id;
           row.match_status = "matched";
           creados++;
@@ -133,7 +137,7 @@ export async function confirmAssignment(
   }
 
   try {
-    const summaries = await applyAutoAssignment(roundId, entries);
+    const summaries = await applyAutoAssignment(roundId, entries, { enviarCorreos });
 
     const supabase = getSupabaseAdmin();
     await supabase

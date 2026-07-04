@@ -218,7 +218,8 @@ function asignarAulasParaHoras(
  */
 export async function applyAutoAssignment(
   roundId: RoundId,
-  entries: AssignmentEntry[]
+  entries: AssignmentEntry[],
+  opts: { enviarCorreos?: boolean } = {}
 ): Promise<AssignmentSummary[]> {
   const supabase = getSupabaseAdmin();
   const round = await getRound(roundId);
@@ -341,6 +342,10 @@ export async function applyAutoAssignment(
   }
 
   const summaryById = new Map(summaries.map((s) => [s.participant_id, s]));
+
+  if (opts.enviarCorreos === false) {
+    return summaries;
+  }
 
   await mapWithConcurrency(entries, 5, async (entry) => {
     const participant = participantsById.get(entry.participant_id);

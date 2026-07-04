@@ -19,6 +19,8 @@ export function AsignacionClient({
   const [summaries, setSummaries] = useState<AssignmentSummary[] | null>(null);
   const [creados, setCreados] = useState<number | null>(null);
   const [crearNoCoincidencias, setCrearNoCoincidencias] = useState(false);
+  const [modoPrueba, setModoPrueba] = useState(false);
+  const [ultimoModoPrueba, setUltimoModoPrueba] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function updateRow(index: number, patch: Partial<PdfAssignmentRow>) {
@@ -48,10 +50,11 @@ export function AsignacionClient({
     if (!batchId || !roundId) return;
     setError(null);
     startTransition(async () => {
-      const res = await confirmAssignment(batchId, roundId, rows, crearNoCoincidencias);
+      const res = await confirmAssignment(batchId, roundId, rows, crearNoCoincidencias, !modoPrueba);
       if (res.ok) {
         setSummaries(res.summaries!);
         setCreados(res.creados ?? 0);
+        setUltimoModoPrueba(modoPrueba);
         setRows([]);
         setBatchId(null);
       } else {
@@ -191,6 +194,11 @@ export function AsignacionClient({
             {rows.filter((r) => r.match_status !== "matched").length} filas sin coincidencia
           </label>
 
+          <label className="flex items-center gap-2 text-sm text-ink/80">
+            <input type="checkbox" checked={modoPrueba} onChange={(e) => setModoPrueba(e.target.checked)} />
+            Modo prueba: crear cuentas y asignar horas igualmente, pero sin enviar ningún correo
+          </label>
+
           <div className="flex gap-3">
             <button
               onClick={handleConfirm}
@@ -209,10 +217,21 @@ export function AsignacionClient({
       {summaries && (
         <div className="flex flex-col gap-2 rounded-md border border-ink/10 p-4">
           <h2 className="text-lg font-medium text-ink">Resultado de la asignación</h2>
-          {!!creados && (
+          {ultimoModoPrueba && (
+            <p className="text-sm text-ink/60">
+              Modo prueba: se crearon las cuentas y se asignaron las horas, pero no se ha enviado ningún correo.
+            </p>
+          )}
+          {!!creados && !ultimoModoPrueba && (
             <p className="text-sm text-slot-free">
               {creados} participante{creados === 1 ? "" : "s"} nuevo{creados === 1 ? "" : "s"} creado
               {creados === 1 ? "" : "s"} y con su contraseña enviada por correo.
+            </p>
+          )}
+          {!!creados && ultimoModoPrueba && (
+            <p className="text-sm text-slot-free">
+              {creados} participante{creados === 1 ? "" : "s"} nuevo{creados === 1 ? "" : "s"} creado
+              {creados === 1 ? "" : "s"} (sin enviar correo, modo prueba).
             </p>
           )}
           <table className="w-full text-sm">
@@ -231,7 +250,9 @@ export function AsignacionClient({
                   <td className="py-1">
                     {s.horas_asignadas} / {s.horas_totales_ronda}
                   </td>
-                  <td className="py-1">{s.email_enviado ? "✓ enviado" : "⚠ falló"}</td>
+                  <td className="py-1">
+                    {ultimoModoPrueba ? "— omitido (modo prueba) —" : s.email_enviado ? "✓ enviado" : "⚠ falló"}
+                  </td>
                   <td className="py-1 text-ink/50">{s.aviso ?? ""}</td>
                 </tr>
               ))}

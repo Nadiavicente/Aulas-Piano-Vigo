@@ -137,12 +137,15 @@ export async function regenerateParticipantPassword(participantId: string): Prom
   return newPassword;
 }
 
-export async function createParticipant(params: {
-  nombre: string;
-  email: string;
-  codigo?: string;
-  rondas: RoundId[];
-}): Promise<{ participant: Participant; password: string; emailEnviado: boolean }> {
+export async function createParticipant(
+  params: {
+    nombre: string;
+    email: string;
+    codigo?: string;
+    rondas: RoundId[];
+  },
+  opts: { enviarCorreo?: boolean } = {}
+): Promise<{ participant: Participant; password: string; emailEnviado: boolean }> {
   const supabase = getSupabaseAdmin();
   const password = generateReadablePassword();
   const hash = await hashPassword(password);
@@ -164,7 +167,9 @@ export async function createParticipant(params: {
   const participant = data as Participant;
   // El envío del correo de bienvenida no debe hacer fallar el alta del
   // participante si falla; sendWelcomeEmail ya registra el fallo en email_log.
-  const emailResult = await sendWelcomeEmail(participant, password);
+  // En modo prueba (opts.enviarCorreo === false) nos lo saltamos por
+  // completo, para poder probar con datos reales sin avisar a nadie.
+  const emailResult = opts.enviarCorreo === false ? { ok: false } : await sendWelcomeEmail(participant, password);
 
   return { participant, password, emailEnviado: emailResult.ok };
 }
