@@ -3,6 +3,7 @@ import { getSupabaseAdmin, fetchAllRows } from "./supabase";
 import { getRound, getRoundRooms } from "./booking";
 import { listHourSlots } from "./schedule";
 import { sendBookingConfirmationEmail } from "./email";
+import { MinCostFlow } from "./minCostFlow";
 import type { RoundId, Room, Participant, Booking } from "./types";
 
 export interface AssignmentEntry {
@@ -25,26 +26,32 @@ function timeToMinutes(hhmmss: string): number {
   return h * 60 + m;
 }
 
-// El día de la actuación se prioriza lo más cercano posible a esa hora
-// (antes primero, luego después). En los otros días no hay actuación que
-// respetar, pero usamos igualmente la hora de actuación de cada persona
-// como "ancla" de preferencia (en vez de empezar siempre por la mañana):
-// si todo el mundo sin actuación ese día prefiriera arrancar a las 09:00,
-// las primeras horas se saturan enseguida y quien se procese más tarde en
-// el reparto se queda sin nada, aunque sobren huecos al final del día.
-// Repartir la preferencia según la hora de actuación de cada uno evita ese
-// atasco.
-function priorityOrder(candidatas: string[], performanceHoraHoy: string | null, horaAncla: string | null): string[] {
+/**
+ * Coste (menor = más preferido) de cada hora candidata para un participante
+ * en un día concreto: el día de su actuación prioriza lo más cercano
+ * posible a esa hora (antes primero, luego después); los otros días usan
+ * igualmente su hora de actuación como referencia, para no concentrar a
+ * todo el mundo en la misma franja. Estos costes solo influyen en CUÁL de
+ * varias soluciones igual de completas se elige; el reparto en sí lo
+ * garantiza el flujo de coste mínimo (ver `resolverHorasDelDia`).
+ */
+function rankHoras(candidatas: string[], performanceHoraHoy: string | null, horaAncla: string | null): Map<string, number> {
+  let ordenadas: string[];
   if (performanceHoraHoy) {
     const antes = candidatas.filter((h) => h < performanceHoraHoy).sort((a, b) => b.localeCompare(a));
     const despues = candidatas.filter((h) => h >= performanceHoraHoy).sort((a, b) => a.localeCompare(b));
-    return [...antes, ...despues];
+    ordenadas = [...antes, ...despues];
+  } else if (horaAncla) {
+    const anclaMin = timeToMinutes(horaAncla);
+    ordenadas = [...candidatas].sort(
+      (a, b) => Math.abs(timeToMinutes(a) - anclaMin) - Math.abs(timeToMinutes(b) - anclaMin)
+    );
+  } else {
+    ordenadas = [...candidatas].sort((a, b) => a.localeCompare(b));
   }
-  if (!horaAncla) {
-    return [...candidatas].sort((a, b) => a.localeCompare(b));
-  }
-  const anclaMin = timeToMinutes(horaAncla);
-  return [...candidatas].sort((a, b) => Math.abs(timeToMinutes(a) - anclaMin) - Math.abs(timeToMinutes(b) - anclaMin));
+  const rank = new Map<string, number>();
+  ordenadas.forEach((h, i) => rank.set(h, i));
+  return rank;
 }
 
 async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -58,182 +65,156 @@ async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
-// Generador determinista (sin dependencias) para barajar el orden de
-// participantes de cada día. Cada "intento" de reparto usa una semilla
-// distinta; nos quedamos con el resultado que menos horas deja sin asignar.
-function shuffleDeterminista<T>(arr: T[], seed: number): T[] {
-  const a = [...arr];
-  let s = seed + 1;
-  for (let i = a.length - 1; i > 0; i--) {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    const j = s % (i + 1);
-    [a[i], a[j]] = [a[j], a[i]];
+function contarOcupadasPorHora(
+  dia: string,
+  allHoras: string[],
+  rooms: Room[],
+  ocupadas: ReadonlySet<string>,
+  bloqueadas: ReadonlySet<string>
+): Map<string, number> {
+  const conteo = new Map<string, number>();
+  for (const hora of allHoras) {
+    let count = 0;
+    for (const r of rooms) {
+      if (ocupadas.has(`${dia}|${r.id}|${hora}`) || bloqueadas.has(`${dia}|${r.id}|${hora}`)) count++;
+    }
+    conteo.set(hora, count);
   }
-  return a;
+  return conteo;
 }
 
-interface ResultadoReparto {
-  nuevasReservas: {
+/**
+ * Calcula, para un día concreto, qué HORAS (todavía sin aula concreta) le
+ * corresponden a cada participante, mediante flujo de coste mínimo:
+ * participante -> horas candidatas -> aforo disponible por hora. Como el
+ * aforo total (aulas × horas) suele sobrar frente a la demanda (98
+ * participantes × 4h en 30 aulas × 14h), esto encuentra el reparto que
+ * maximiza cuántas horas se cubren en total (no una aproximación greedy que
+ * puede dejar huecos sin usar), y entre los repartos igual de completos
+ * prefiere el de menor coste (más cercano a la hora de actuación de cada
+ * uno).
+ */
+function resolverHorasDelDia(
+  dia: string,
+  round: { max_horas_dia: number },
+  rooms: Room[],
+  allHoras: string[],
+  entries: AssignmentEntry[],
+  horasYaAsignadasPorParticipante: ReadonlyMap<string, ReadonlySet<string>>,
+  ocupadasPorHora: ReadonlyMap<string, number>
+): Map<string, string[]> {
+  const N = entries.length;
+  const H = allHoras.length;
+  const SOURCE = 0;
+  const SINK = N + H + 1;
+  const mcf = new MinCostFlow(N + H + 2);
+  const horaIndex = new Map(allHoras.map((h, i) => [h, i]));
+
+  let edgeCounter = 0;
+  const participantHoraEdges: { participantId: string; hora: string; edgeIndex: number }[] = [];
+
+  entries.forEach((entry, i) => {
+    const horasYaMias = horasYaAsignadasPorParticipante.get(entry.participant_id) ?? new Set<string>();
+    const necesarias = Math.max(0, round.max_horas_dia - horasYaMias.size);
+    mcf.addEdge(SOURCE, i + 1, necesarias, 0);
+    edgeCounter++;
+
+    if (necesarias === 0) return;
+
+    const candidatas = allHoras.filter((h) => !horasYaMias.has(h));
+    const performanceHoraHoy = dia === entry.dia ? entry.hora : null;
+    const rank = rankHoras(candidatas, performanceHoraHoy, entry.hora);
+
+    for (const h of candidatas) {
+      const hi = horaIndex.get(h)!;
+      mcf.addEdge(i + 1, N + 1 + hi, 1, rank.get(h) ?? candidatas.length);
+      participantHoraEdges.push({ participantId: entry.participant_id, hora: h, edgeIndex: edgeCounter });
+      edgeCounter++;
+    }
+  });
+
+  allHoras.forEach((hora, hi) => {
+    const ocupadasYa = ocupadasPorHora.get(hora) ?? 0;
+    const capacidad = Math.max(0, rooms.length - ocupadasYa);
+    mcf.addEdge(N + 1 + hi, SINK, capacidad, 0);
+    edgeCounter++;
+  });
+
+  mcf.run(SOURCE, SINK);
+
+  const resultado = new Map<string, string[]>();
+  for (const { participantId, hora, edgeIndex } of participantHoraEdges) {
+    if (mcf.flowOfEdge(edgeIndex) > 0) {
+      if (!resultado.has(participantId)) resultado.set(participantId, []);
+      resultado.get(participantId)!.push(hora);
+    }
+  }
+  return resultado;
+}
+
+/**
+ * Reparte aulas concretas para las horas ya decididas por
+ * `resolverHorasDelDia`. Como el flujo garantiza que, para cada hora, el
+ * número de personas que la necesitan no supera el aforo de aulas libres en
+ * esa hora, cualquier asignación 1-a-1 dentro de esa hora es válida; solo
+ * intentamos reutilizar la misma aula del participante en horas
+ * consecutivas para que tenga que moverse de aula lo menos posible.
+ */
+function asignarAulasParaHoras(
+  dia: string,
+  roundId: RoundId,
+  rooms: Room[],
+  allHoras: string[],
+  bloqueadas: ReadonlySet<string>,
+  ocupadas: Set<string>,
+  horasPorParticipante: ReadonlyMap<string, string[]>
+): { participant_id: string; round_id: RoundId; dia: string; room_id: string; hora: string; source: "admin_auto" }[] {
+  const nuevas: {
     participant_id: string;
     round_id: RoundId;
     dia: string;
     room_id: string;
     hora: string;
     source: "admin_auto";
-  }[];
-  totalHorasPorParticipante: Map<string, number>;
-  faltaronAulasPorParticipante: Set<string>;
-  totalFaltante: number;
-}
+  }[] = [];
+  const ultimaAulaPorParticipante = new Map<string, string>();
 
-// Ejecuta una simulación completa (día por día) del reparto en memoria, sin
-// tocar la base de datos, partiendo siempre de la misma ocupación ya
-// existente. `ordenPorDia` decide en qué orden se atiende a los
-// participantes cada día; probamos varios órdenes y nos quedamos con el que
-// menos horas deja sin cubrir en total (ver `elegirMejorReparto`).
-function simularReparto(
-  round: { dias: string[]; max_horas_dia: number },
-  rooms: Room[],
-  allHoras: string[],
-  entries: AssignmentEntry[],
-  roundId: RoundId,
-  ocupadasBase: ReadonlySet<string>,
-  bloqueadas: ReadonlySet<string>,
-  misHorasPorDiaBase: ReadonlyMap<string, ReadonlySet<string>>,
-  misAulasPorDiaBase: ReadonlyMap<string, ReadonlySet<string>>,
-  ordenPorDia: (dayIndex: number) => AssignmentEntry[]
-): ResultadoReparto {
-  const ocupadas = new Set(ocupadasBase);
-  const misHorasPorDia = new Map<string, Set<string>>();
-  const misAulasPorDia = new Map<string, Set<string>>();
-  for (const [k, v] of misHorasPorDiaBase) misHorasPorDia.set(k, new Set(v));
-  for (const [k, v] of misAulasPorDiaBase) misAulasPorDia.set(k, new Set(v));
+  for (const hora of allHoras) {
+    for (const [participantId, horas] of horasPorParticipante) {
+      if (!horas.includes(hora)) continue;
 
-  const nuevasReservas: ResultadoReparto["nuevasReservas"] = [];
-  const totalHorasPorParticipante = new Map<string, number>();
-  const faltaronAulasPorParticipante = new Set<string>();
+      const preferidaId = ultimaAulaPorParticipante.get(participantId);
+      const preferida = preferidaId
+        ? rooms.find(
+            (r) => r.id === preferidaId && !ocupadas.has(`${dia}|${r.id}|${hora}`) && !bloqueadas.has(`${dia}|${r.id}|${hora}`)
+          )
+        : undefined;
+      const libre =
+        preferida ?? rooms.find((r) => !ocupadas.has(`${dia}|${r.id}|${hora}`) && !bloqueadas.has(`${dia}|${r.id}|${hora}`));
 
-  round.dias.forEach((dia, dayIndex) => {
-    const ordenDelDia = ordenPorDia(dayIndex);
+      if (!libre) continue; // no debería ocurrir: el flujo ya calculó el aforo disponible en esta hora
 
-    for (const entry of ordenDelDia) {
-      const performanceHoraHoy = dia === entry.dia ? entry.hora : null;
-      const key = `${entry.participant_id}|${dia}`;
-      const horasYaMias = misHorasPorDia.get(key) ?? new Set<string>();
-      const aulasDelDia = misAulasPorDia.get(key) ?? new Set<string>();
-      let restantes = round.max_horas_dia - horasYaMias.size;
-
-      if (restantes > 0) {
-        const candidatas = allHoras.filter((h) => !horasYaMias.has(h));
-        const orden = priorityOrder(candidatas, performanceHoraHoy, entry.hora);
-
-        for (const hora of orden) {
-          if (restantes <= 0) break;
-
-          const preferida = rooms.find(
-            (r) =>
-              aulasDelDia.has(r.id) &&
-              !ocupadas.has(`${dia}|${r.id}|${hora}`) &&
-              !bloqueadas.has(`${dia}|${r.id}|${hora}`)
-          );
-          const libre =
-            preferida ??
-            rooms.find((r) => !ocupadas.has(`${dia}|${r.id}|${hora}`) && !bloqueadas.has(`${dia}|${r.id}|${hora}`));
-
-          if (!libre) continue;
-          if (!preferida && aulasDelDia.size >= 4) continue;
-
-          nuevasReservas.push({
-            participant_id: entry.participant_id,
-            round_id: roundId,
-            dia,
-            room_id: libre.id,
-            hora,
-            source: "admin_auto",
-          });
-          ocupadas.add(`${dia}|${libre.id}|${hora}`);
-          aulasDelDia.add(libre.id);
-          horasYaMias.add(hora);
-          restantes--;
-        }
-      }
-
-      misHorasPorDia.set(key, horasYaMias);
-      misAulasPorDia.set(key, aulasDelDia);
-      if (restantes > 0) faltaronAulasPorParticipante.add(entry.participant_id);
+      ocupadas.add(`${dia}|${libre.id}|${hora}`);
+      ultimaAulaPorParticipante.set(participantId, libre.id);
+      nuevas.push({ participant_id: participantId, round_id: roundId, dia, room_id: libre.id, hora, source: "admin_auto" });
     }
-  });
-
-  for (const entry of entries) {
-    let total = 0;
-    for (const dia of round.dias) {
-      total += misHorasPorDia.get(`${entry.participant_id}|${dia}`)?.size ?? 0;
-    }
-    totalHorasPorParticipante.set(entry.participant_id, total);
   }
 
-  const objetivo = round.dias.length * round.max_horas_dia;
-  const totalFaltante = entries.reduce(
-    (acc, e) => acc + (objetivo - (totalHorasPorParticipante.get(e.participant_id) ?? 0)),
-    0
-  );
-
-  return { nuevasReservas, totalHorasPorParticipante, faltaronAulasPorParticipante, totalFaltante };
-}
-
-const INTENTOS_DE_REPARTO = 60;
-
-// Prueba varias rotaciones distintas del orden de participantes por día (un
-// "multi-start" barato) y se queda con la que menos horas deja sin cubrir
-// en total. Con ~98 participantes cada intento tarda unos ms, así que 60
-// intentos son ~1-2s: un margen muy cómodo dentro del tiempo disponible de
-// la función serverless.
-function elegirMejorReparto(
-  round: { dias: string[]; max_horas_dia: number },
-  rooms: Room[],
-  allHoras: string[],
-  entries: AssignmentEntry[],
-  roundId: RoundId,
-  ocupadasBase: ReadonlySet<string>,
-  bloqueadas: ReadonlySet<string>,
-  misHorasPorDiaBase: ReadonlyMap<string, ReadonlySet<string>>,
-  misAulasPorDiaBase: ReadonlyMap<string, ReadonlySet<string>>
-): ResultadoReparto {
-  let mejor: ResultadoReparto | null = null;
-
-  for (let intento = 0; intento < INTENTOS_DE_REPARTO; intento++) {
-    const ordenPorDia = (dayIndex: number) => shuffleDeterminista(entries, intento * 1000 + dayIndex * 7919);
-    const resultado = simularReparto(
-      round,
-      rooms,
-      allHoras,
-      entries,
-      roundId,
-      ocupadasBase,
-      bloqueadas,
-      misHorasPorDiaBase,
-      misAulasPorDiaBase,
-      ordenPorDia
-    );
-    if (!mejor || resultado.totalFaltante < mejor.totalFaltante) mejor = resultado;
-    if (mejor.totalFaltante === 0) break;
-  }
-
-  return mejor!;
+  return nuevas;
 }
 
 /**
  * Asigna automáticamente las horas de estudio de cada participante en los
- * TRES días de la ronda: el día de su actuación prioriza las franjas
- * anteriores a la hora de actuación y completa el resto después; los otros
- * días también usan la hora de actuación como referencia para no
- * concentrar a todo el mundo en las primeras horas del día. Respeta en todo
- * momento aulas ya ocupadas, bloqueos, y las horas que el participante ya
- * se hubiera reservado por su cuenta. Prueba varias rotaciones del orden de
- * atención (`elegirMejorReparto`) y se queda con la que mejor reparte el
- * aforo disponible. Procesa todo en memoria y hace una única escritura en
- * bloque para poder manejar de golpe los ~98 participantes de una ronda sin
- * agotar el tiempo de una función serverless.
+ * TRES días de la ronda. Para cada día se resuelve un flujo de coste
+ * mínimo (participante -> horas candidatas -> aforo por hora) que
+ * garantiza el máximo de horas cubiertas posible dado el aforo real de
+ * aulas, no solo una heurística de mejor esfuerzo; el coste de cada hora
+ * para cada participante prioriza la cercanía a su hora de actuación.
+ * Respeta en todo momento aulas ya ocupadas, bloqueos, y las horas que el
+ * participante ya se hubiera reservado por su cuenta. Procesa todo en
+ * memoria y hace una única escritura en bloque para poder manejar de golpe
+ * los ~98 participantes de una ronda sin agotar el tiempo de una función
+ * serverless.
  */
 export async function applyAutoAssignment(
   roundId: RoundId,
@@ -266,15 +247,12 @@ export async function applyAutoAssignment(
   const ocupadas = new Set<string>(); // `${dia}|${room_id}|${hora}`
   const bloqueadas = new Set<string>(); // `${dia}|${room_id}|${hora}`
   const misHorasPorDia = new Map<string, Set<string>>(); // `${participant_id}|${dia}` -> horas
-  const misAulasPorDia = new Map<string, Set<string>>(); // `${participant_id}|${dia}` -> room_ids
 
   for (const b of bookingsData ?? []) {
     ocupadas.add(`${b.dia}|${b.room_id}|${b.hora}`);
     const key = `${b.participant_id}|${b.dia}`;
     if (!misHorasPorDia.has(key)) misHorasPorDia.set(key, new Set());
     misHorasPorDia.get(key)!.add(b.hora);
-    if (!misAulasPorDia.has(key)) misAulasPorDia.set(key, new Set());
-    misAulasPorDia.get(key)!.add(b.room_id);
   }
   for (const b of blockedData ?? []) {
     bloqueadas.add(`${b.dia}|${b.room_id}|${b.hora}`);
@@ -289,39 +267,69 @@ export async function applyAutoAssignment(
       performance_hour: e.hora,
     }));
 
-  // Probamos varias rotaciones del orden de participantes por día y nos
-  // quedamos con la que menos horas deja sin cubrir en total (ver
-  // `elegirMejorReparto`), en vez de aplicar una única rotación fija.
-  const mejorReparto = elegirMejorReparto(
-    round,
-    rooms,
-    allHoras,
-    entries,
-    roundId,
-    ocupadas,
-    bloqueadas,
-    misHorasPorDia,
-    misAulasPorDia
-  );
+  const nuevasReservas: {
+    participant_id: string;
+    round_id: RoundId;
+    dia: string;
+    room_id: string;
+    hora: string;
+    source: "admin_auto";
+  }[] = [];
+  const acumulado = new Map<string, { totalHorasRonda: number; faltaronAulas: boolean }>();
+  for (const entry of entries) {
+    acumulado.set(entry.participant_id, { totalHorasRonda: 0, faltaronAulas: false });
+  }
+
+  for (const dia of round.dias) {
+    const ocupadasPorHora = contarOcupadasPorHora(dia, allHoras, rooms, ocupadas, bloqueadas);
+    const horasYaAsignadasPorParticipante = new Map<string, ReadonlySet<string>>(
+      entries.map((e) => [e.participant_id, misHorasPorDia.get(`${e.participant_id}|${dia}`) ?? new Set<string>()])
+    );
+
+    const horasPorParticipante = resolverHorasDelDia(
+      dia,
+      round,
+      rooms,
+      allHoras,
+      entries,
+      horasYaAsignadasPorParticipante,
+      ocupadasPorHora
+    );
+
+    const nuevasDelDia = asignarAulasParaHoras(dia, roundId, rooms, allHoras, bloqueadas, ocupadas, horasPorParticipante);
+    nuevasReservas.push(...nuevasDelDia);
+
+    for (const entry of entries) {
+      const key = `${entry.participant_id}|${dia}`;
+      const yaMias = misHorasPorDia.get(key) ?? new Set<string>();
+      for (const h of horasPorParticipante.get(entry.participant_id) ?? []) yaMias.add(h);
+      misHorasPorDia.set(key, yaMias);
+
+      const acc = acumulado.get(entry.participant_id)!;
+      acc.totalHorasRonda += yaMias.size;
+      if (yaMias.size < round.max_horas_dia) acc.faltaronAulas = true;
+    }
+  }
 
   const summaries: AssignmentSummary[] = [];
   for (const entry of entries) {
     const participant = participantsById.get(entry.participant_id);
     if (!participant) continue;
+    const acc = acumulado.get(entry.participant_id)!;
     summaries.push({
       participant_id: participant.id,
       nombre: participant.nombre,
-      horas_asignadas: mejorReparto.totalHorasPorParticipante.get(entry.participant_id) ?? 0,
+      horas_asignadas: acc.totalHorasRonda,
       horas_totales_ronda: round.dias.length * round.max_horas_dia,
       email_enviado: false,
-      aviso: mejorReparto.faltaronAulasPorParticipante.has(entry.participant_id)
+      aviso: acc.faltaronAulas
         ? "No se pudo completar el máximo de horas algún día: no quedaban aulas libres."
         : undefined,
     });
   }
 
-  if (mejorReparto.nuevasReservas.length > 0) {
-    const { error } = await supabase.from("bookings").insert(mejorReparto.nuevasReservas);
+  if (nuevasReservas.length > 0) {
+    const { error } = await supabase.from("bookings").insert(nuevasReservas);
     if (error) throw new Error("No se pudieron guardar las reservas: " + error.message);
   }
 
