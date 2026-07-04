@@ -131,15 +131,17 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
     const inlineDia = findInlineDate(line, roundDias);
     const hora = findTime(line);
 
-    // El nombre es lo que queda en la línea tras quitar correo, fecha y hora
+    // El nombre es lo que queda en la línea tras quitar correo, fecha, hora,
+    // el número de orden ("Sec.") inicial y puntuación suelta.
     let nombre = line
       .replace(EMAIL_RE, "")
       .replace(DATE_SLASH_RE, "")
       .replace(DATE_ISO_RE, "")
       .replace(TIME_RE, "")
-      .replace(/\s{2,}/g, " ")
       .replace(/[,;|]+/g, " ")
-      .trim();
+      .replace(/\s{2,}/g, " ")
+      .trim()
+      .replace(/^\d+\s+/, "");
 
     if (!nombre) nombre = email.split("@")[0];
 

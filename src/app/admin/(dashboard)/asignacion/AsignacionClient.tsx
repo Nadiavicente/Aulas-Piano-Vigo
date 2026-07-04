@@ -17,6 +17,8 @@ export function AsignacionClient({
   const [rows, setRows] = useState<PdfAssignmentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<AssignmentSummary[] | null>(null);
+  const [creados, setCreados] = useState<number | null>(null);
+  const [crearNoCoincidencias, setCrearNoCoincidencias] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function updateRow(index: number, patch: Partial<PdfAssignmentRow>) {
@@ -46,9 +48,10 @@ export function AsignacionClient({
     if (!batchId || !roundId) return;
     setError(null);
     startTransition(async () => {
-      const res = await confirmAssignment(batchId, roundId, rows);
+      const res = await confirmAssignment(batchId, roundId, rows, crearNoCoincidencias);
       if (res.ok) {
         setSummaries(res.summaries!);
+        setCreados(res.creados ?? 0);
         setRows([]);
         setBatchId(null);
       } else {
@@ -114,7 +117,13 @@ export function AsignacionClient({
               <tbody>
                 {rows.map((row, i) => (
                   <tr key={i} className="border-t border-ink/5">
-                    <td className="px-3 py-2 text-ink/70">{row.nombre}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        value={row.nombre}
+                        onChange={(e) => updateRow(i, { nombre: e.target.value })}
+                        className="w-40 rounded border border-ink/20 px-2 py-1"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <input
                         value={row.email}
@@ -172,6 +181,16 @@ export function AsignacionClient({
             </table>
           </div>
 
+          <label className="flex items-center gap-2 text-sm text-ink/80">
+            <input
+              type="checkbox"
+              checked={crearNoCoincidencias}
+              onChange={(e) => setCrearNoCoincidencias(e.target.checked)}
+            />
+            Crear automáticamente la cuenta (con contraseña por correo) para las{" "}
+            {rows.filter((r) => r.match_status !== "matched").length} filas sin coincidencia
+          </label>
+
           <div className="flex gap-3">
             <button
               onClick={handleConfirm}
@@ -190,6 +209,12 @@ export function AsignacionClient({
       {summaries && (
         <div className="flex flex-col gap-2 rounded-md border border-ink/10 p-4">
           <h2 className="text-lg font-medium text-ink">Resultado de la asignación</h2>
+          {!!creados && (
+            <p className="text-sm text-slot-free">
+              {creados} participante{creados === 1 ? "" : "s"} nuevo{creados === 1 ? "" : "s"} creado
+              {creados === 1 ? "" : "s"} y con su contraseña enviada por correo.
+            </p>
+          )}
           <table className="w-full text-sm">
             <thead className="text-left text-ink/60">
               <tr>

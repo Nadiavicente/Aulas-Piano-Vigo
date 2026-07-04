@@ -3,6 +3,7 @@
 import { verifyAdminSession } from "@/lib/dal";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getRound } from "@/lib/booking";
+import { createParticipant } from "@/lib/admin";
 import { extractPdfText, parseAssignmentText } from "@/lib/pdfParse";
 import { applyAutoAssignment, type AssignmentEntry, type AssignmentSummary } from "@/lib/autoAssign";
 import type { RoundId, PdfAssignmentRow } from "@/lib/types";
@@ -75,14 +76,53 @@ export interface ConfirmResult {
   ok: boolean;
   error?: string;
   summaries?: AssignmentSummary[];
+  creados?: number;
 }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function confirmAssignment(
   batchId: string,
   roundId: RoundId,
-  rows: PdfAssignmentRow[]
+  rows: PdfAssignmentRow[],
+  crearNoCoincidencias = false
 ): Promise<ConfirmResult> {
   await verifyAdminSession();
+
+  let creados = 0;
+
+  // Filas sin participante emparejado pero con nombre y correo válidos: si
+  // se ha pedido, se les crea la cuenta ahora (con contraseña y email de
+  // bienvenida) antes de asignarles horas. Se hace con concurrencia
+  // limitada para no tardar demasiado con lotes grandes (~100 filas).
+  if (crearNoCoincidencias) {
+    const pendientes = rows.filter(
+      (r) => !r.participant_id && r.match_status !== "matched" && r.email && EMAIL_RE.test(r.email)
+    );
+    const CONCURRENCIA = 5;
+    let idx = 0;
+    async function crearSiguiente() {
+      while (idx < pendientes.length) {
+        const row = pendientes[idx++];
+        try {
+          const { participant } = await createParticipant({
+            nombre: row.nombre || row.email.split("@")[0],
+            email: row.email,
+            rondas: [roundId],
+          });
+          row.participant_id = participant.id;
+          row.match_status = "matched";
+          creados++;
+        } catch {
+          // Puede fallar si el correo ya existe por alguna condición de carrera;
+          // dejamos la fila sin emparejar en vez de interrumpir todo el lote.
+        }
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCIA, pendientes.length) }, crearSiguiente)
+    );
+  }
 
   const entries: AssignmentEntry[] = rows
     .filter((r) => r.participant_id && r.dia)
@@ -103,7 +143,8 @@ export async function confirmAssignment(
 
     revalidatePath("/admin");
     revalidatePath("/admin/asignacion");
-    return { ok: true, summaries };
+    revalidatePath("/admin/participantes");
+    return { ok: true, summaries, creados };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
   }
