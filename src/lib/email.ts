@@ -2,7 +2,7 @@ import "server-only";
 import { Resend } from "resend";
 import { getSupabaseAdmin } from "./supabase";
 import { formatDia, formatHora } from "./schedule";
-import { generateLoginQrDataUrl, getLoginUrl } from "./qrcode";
+import { generateLoginQrPngBuffer, getLoginUrl } from "./qrcode";
 import type { Booking, Room, Round, Participant } from "./types";
 
 function getResend() {
@@ -29,6 +29,7 @@ async function sendAndLog(params: {
   html: string;
   type: "booking_confirmation" | "pdf_assignment" | "credentials";
   payload?: unknown;
+  attachments?: { content: Buffer; filename: string; contentType?: string; contentId?: string }[];
 }): Promise<SendResult> {
   const supabase = getSupabaseAdmin();
 
@@ -39,6 +40,7 @@ async function sendAndLog(params: {
       to: params.to,
       subject: params.subject,
       html: params.html,
+      attachments: params.attachments,
     });
 
     if (error) {
@@ -131,7 +133,7 @@ export async function sendBookingConfirmationEmail(
 
 export async function sendWelcomeEmail(participant: Participant, password: string): Promise<SendResult> {
   const loginUrl = getLoginUrl(participant.email);
-  const qrDataUrl = await generateLoginQrDataUrl(participant.email);
+  const qrBuffer = await generateLoginQrPngBuffer(participant.email);
 
   const html = `
     <div style="font-family: sans-serif; color: #1b1310;">
@@ -144,7 +146,7 @@ export async function sendWelcomeEmail(participant: Participant, password: strin
       </p>
       <p><a href="${loginUrl}" style="color:#c8a24a;">Entrar a la plataforma</a></p>
       <p>O escanea este código QR desde el móvil para entrar directamente:</p>
-      <img src="${qrDataUrl}" alt="Código QR de acceso" width="180" height="180" />
+      <img src="cid:qrcode" alt="Código QR de acceso" width="180" height="180" />
       <p>X Concurso Internacional de Piano Ciudad de Vigo</p>
     </div>
   `;
@@ -156,5 +158,8 @@ export async function sendWelcomeEmail(participant: Participant, password: strin
     html,
     type: "credentials",
     payload: { reason: "participant_created" },
+    attachments: [
+      { content: qrBuffer, filename: "qr-acceso.png", contentType: "image/png", contentId: "qrcode" },
+    ],
   });
 }
