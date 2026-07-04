@@ -1,14 +1,28 @@
 import "server-only";
-import { PDFParse } from "pdf-parse";
+import { getDocumentProxy, extractTextItems } from "unpdf";
 
 export async function extractPdfText(buffer: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const result = await parser.getText();
-    return result.text;
-  } finally {
-    await parser.destroy();
+  const data = new Uint8Array(buffer);
+  const pdf = await getDocumentProxy(data);
+  const { items } = await extractTextItems(pdf);
+
+  // unpdf no separa el texto por líneas al fusionar páginas (usa espacios),
+  // así que reconstruimos las líneas nosotros mismos a partir del indicador
+  // hasEOL que trae cada fragmento de texto (fin de línea según PDF.js).
+  const lines: string[] = [];
+  for (const pageItems of items) {
+    let current = "";
+    for (const item of pageItems) {
+      current += item.str;
+      if (item.hasEOL) {
+        lines.push(current);
+        current = "";
+      }
+    }
+    if (current) lines.push(current);
   }
+
+  return lines.join("\n");
 }
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
