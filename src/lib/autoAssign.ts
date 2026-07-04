@@ -1,5 +1,5 @@
 import "server-only";
-import { getSupabaseAdmin } from "./supabase";
+import { getSupabaseAdmin, fetchAllRows } from "./supabase";
 import { getRound, getRoundRooms } from "./booking";
 import { listHourSlots } from "./schedule";
 import { sendBookingConfirmationEmail } from "./email";
@@ -63,10 +63,18 @@ export async function applyAutoAssignment(
   const allHoras = listHourSlots(round.hora_inicio, round.hora_fin);
   const participantIds = entries.map((e) => e.participant_id);
 
-  const [{ data: participantsData }, { data: bookingsData }, { data: blockedData }] = await Promise.all([
+  const [{ data: participantsData }, bookingsData, blockedData] = await Promise.all([
     supabase.from("participants").select("*").in("id", participantIds),
-    supabase.from("bookings").select("participant_id, dia, room_id, hora").eq("round_id", roundId),
-    supabase.from("blocked_slots").select("dia, room_id, hora").eq("round_id", roundId),
+    fetchAllRows<{ participant_id: string; dia: string; room_id: string; hora: string }>((from, to) =>
+      supabase
+        .from("bookings")
+        .select("participant_id, dia, room_id, hora")
+        .eq("round_id", roundId)
+        .range(from, to)
+    ),
+    fetchAllRows<{ dia: string; room_id: string; hora: string }>((from, to) =>
+      supabase.from("blocked_slots").select("dia, room_id, hora").eq("round_id", roundId).range(from, to)
+    ),
   ]);
 
   const participantsById = new Map(((participantsData ?? []) as Participant[]).map((p) => [p.id, p]));

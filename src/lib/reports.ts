@@ -1,6 +1,6 @@
 import "server-only";
 import ExcelJS from "exceljs";
-import { getSupabaseAdmin } from "./supabase";
+import { getSupabaseAdmin, fetchAllRows } from "./supabase";
 import { formatDia, formatHora } from "./schedule";
 import type { RoundId, Booking, Room, Participant } from "./types";
 
@@ -34,14 +34,16 @@ async function joinRows(bookings: Booking[], rooms: Room[], participants: Partic
 
 export async function getReportByRound(roundId: RoundId, dia?: string): Promise<ReportRow[]> {
   const supabase = getSupabaseAdmin();
-  let query = supabase.from("bookings").select("*").eq("round_id", roundId);
-  if (dia) query = query.eq("dia", dia);
-  const { data: bookings } = await query;
+  const bookings = await fetchAllRows<Booking>((from, to) => {
+    let query = supabase.from("bookings").select("*").eq("round_id", roundId);
+    if (dia) query = query.eq("dia", dia);
+    return query.range(from, to);
+  });
 
   const { data: rooms } = await supabase.from("rooms").select("*");
   const { data: participants } = await supabase.from("participants").select("*");
 
-  return joinRows((bookings ?? []) as Booking[], (rooms ?? []) as Room[], (participants ?? []) as Participant[]);
+  return joinRows(bookings, (rooms ?? []) as Room[], (participants ?? []) as Participant[]);
 }
 
 export async function getReportByRoom(roundId: RoundId, roomId: string): Promise<ReportRow[]> {

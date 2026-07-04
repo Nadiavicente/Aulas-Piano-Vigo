@@ -1,5 +1,5 @@
 import "server-only";
-import { getSupabaseAdmin } from "./supabase";
+import { getSupabaseAdmin, fetchAllRows } from "./supabase";
 import { listHourSlots } from "./schedule";
 import type {
   Round,
@@ -62,32 +62,48 @@ export async function getRoundDaysState(
   const supabase = getSupabaseAdmin();
   const horas = listHourSlots(round.hora_inicio, round.hora_fin);
 
-  const { data: bookings } = await supabase
-    .from("bookings")
-    .select("dia, room_id, hora, participant_id, participants(nombre)")
-    .eq("round_id", round.id);
+  const bookings = await fetchAllRows<{
+    dia: string;
+    room_id: string;
+    hora: string;
+    participant_id: string;
+    participants: { nombre: string } | null;
+  }>(
+    (from, to) =>
+      supabase
+        .from("bookings")
+        .select("dia, room_id, hora, participant_id, participants(nombre)")
+        .eq("round_id", round.id)
+        .range(from, to) as unknown as PromiseLike<{
+        data:
+          | {
+              dia: string;
+              room_id: string;
+              hora: string;
+              participant_id: string;
+              participants: { nombre: string } | null;
+            }[]
+          | null;
+        error: { message: string } | null;
+      }>
+  );
 
-  const { data: blocked } = await supabase
-    .from("blocked_slots")
-    .select("dia, room_id, hora")
-    .eq("round_id", round.id);
+  const blocked = await fetchAllRows<{ dia: string; room_id: string; hora: string }>((from, to) =>
+    supabase.from("blocked_slots").select("dia, room_id, hora").eq("round_id", round.id).range(from, to)
+  );
 
   const bookingsByKey = new Map<
     string,
     { participant_id: string; nombre?: string }
   >();
-  for (const b of (bookings ?? []) as unknown as (Booking & {
-    participants: { nombre: string } | null;
-  })[]) {
+  for (const b of bookings) {
     bookingsByKey.set(`${b.dia}|${b.room_id}|${b.hora}`, {
       participant_id: b.participant_id,
       nombre: b.participants?.nombre,
     });
   }
 
-  const blockedKeys = new Set(
-    ((blocked ?? []) as BlockedSlot[]).map((b) => `${b.dia}|${b.room_id}|${b.hora}`)
-  );
+  const blockedKeys = new Set(blocked.map((b) => `${b.dia}|${b.room_id}|${b.hora}`));
 
   return round.dias.map((dia) => {
     let horasReservadasMias = 0;
