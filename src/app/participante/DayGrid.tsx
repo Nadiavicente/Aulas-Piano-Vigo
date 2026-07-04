@@ -91,7 +91,8 @@ export function DayGrid({
         </p>
         <p className="mt-1 text-sm font-medium text-gold">
           ⚠️ Debes pulsar &quot;Confirmar reserva del día&quot; en cada día por separado — si no,
-          esas horas no quedarán guardadas.
+          esas horas no quedarán guardadas. Una vez confirmadas las aulas, no podrás cambiar esos
+          horarios tú mismo/a — contacta con la organización si necesitas modificarlos.
         </p>
       </div>
 
