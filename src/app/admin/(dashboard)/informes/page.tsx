@@ -18,7 +18,12 @@ export default async function InformesPage({
 
   return (
     <div className="flex flex-col gap-10">
-      <h1 className="font-serif text-2xl font-semibold text-ink">Informes</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="font-serif text-2xl font-semibold text-ink">Informes</h1>
+        <Link href="/admin/informes/resumen" className="text-sm text-ink underline">
+          Ver resumen diario de horas/aulas por participante
+        </Link>
+      </div>
 
       <RoundReportForms rounds={rounds} roomsByRound={roomsByRound} />
 

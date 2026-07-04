@@ -35,3 +35,8 @@ export function formatDia(iso: string): string {
     month: "long",
   });
 }
+
+export function formatDiaCorto(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" });
+}

@@ -1,6 +1,7 @@
 import "server-only";
 import ExcelJS from "exceljs";
 import { getSupabaseAdmin, fetchAllRows } from "./supabase";
+import { getRound } from "./booking";
 import { formatDia, formatHora } from "./schedule";
 import type { RoundId, Booking, Room, Participant } from "./types";
 
@@ -44,6 +45,77 @@ export async function getReportByRound(roundId: RoundId, dia?: string): Promise<
   const { data: participants } = await supabase.from("participants").select("*");
 
   return joinRows(bookings, (rooms ?? []) as Room[], (participants ?? []) as Participant[]);
+}
+
+export interface DailySummaryCell {
+  horas: number;
+  aulas: number;
+}
+
+export interface DailySummaryRow {
+  participant_id: string;
+  nombre: string;
+  correo: string;
+  porDia: Record<string, DailySummaryCell>;
+  totalHoras: number;
+}
+
+export interface DailySummary {
+  dias: string[];
+  maxHorasDia: number;
+  horasObjetivoTotal: number;
+  rows: DailySummaryRow[];
+}
+
+/**
+ * Resumen compacto de horas/aulas asignadas por participante y día de una
+ * ronda, pensado para revisar de un vistazo si el reparto está siendo
+ * equilibrado (en vez de tener que abrir el informe fila-a-fila).
+ */
+export async function getDailySummary(roundId: RoundId): Promise<DailySummary> {
+  const supabase = getSupabaseAdmin();
+  const round = await getRound(roundId);
+  if (!round) throw new Error("La ronda no existe.");
+
+  const { data: allParticipants } = await supabase.from("participants").select("*");
+  const participants = ((allParticipants ?? []) as Participant[]).filter((p) =>
+    p.rondas_clasificado.includes(roundId)
+  );
+
+  const bookings = await fetchAllRows<{ participant_id: string; dia: string; room_id: string }>((from, to) =>
+    supabase.from("bookings").select("participant_id, dia, room_id").eq("round_id", roundId).range(from, to)
+  );
+
+  const porParticipante = new Map<string, Record<string, { horas: number; aulas: Set<string> }>>();
+  for (const b of bookings) {
+    if (!porParticipante.has(b.participant_id)) porParticipante.set(b.participant_id, {});
+    const dias = porParticipante.get(b.participant_id)!;
+    if (!dias[b.dia]) dias[b.dia] = { horas: 0, aulas: new Set() };
+    dias[b.dia].horas += 1;
+    dias[b.dia].aulas.add(b.room_id);
+  }
+
+  const rows: DailySummaryRow[] = participants
+    .map((p) => {
+      const dias = porParticipante.get(p.id) ?? {};
+      const porDia: Record<string, DailySummaryCell> = {};
+      let totalHoras = 0;
+      for (const dia of round.dias) {
+        const horas = dias[dia]?.horas ?? 0;
+        const aulas = dias[dia]?.aulas.size ?? 0;
+        porDia[dia] = { horas, aulas };
+        totalHoras += horas;
+      }
+      return { participant_id: p.id, nombre: p.nombre, correo: p.email, porDia, totalHoras };
+    })
+    .sort((a, b) => a.totalHoras - b.totalHoras || a.nombre.localeCompare(b.nombre));
+
+  return {
+    dias: round.dias,
+    maxHorasDia: round.max_horas_dia,
+    horasObjetivoTotal: round.dias.length * round.max_horas_dia,
+    rows,
+  };
 }
 
 export async function getReportByRoom(roundId: RoundId, roomId: string): Promise<ReportRow[]> {
