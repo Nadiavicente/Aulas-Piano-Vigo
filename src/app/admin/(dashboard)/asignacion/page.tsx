@@ -2,6 +2,12 @@ import { getAllRounds } from "@/lib/booking";
 import { searchParticipants } from "@/lib/admin";
 import { AsignacionClient } from "./AsignacionClient";
 
+// La asignación automática puede procesar ~100 participantes de golpe
+// (varias docenas de reservas + un email por participante); ampliamos el
+// límite de ejecución de las Server Actions de esta página para que no
+// corte a mitad.
+export const maxDuration = 60;
+
 export default async function AsignacionPage() {
   const rounds = await getAllRounds();
   const participants = await searchParticipants("");

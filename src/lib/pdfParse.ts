@@ -18,25 +18,53 @@ const DATE_ISO_RE = /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/; // yyyy-mm-dd
 
 const MESES: Record<string, string> = {
   enero: "01",
+  january: "01",
   febrero: "02",
+  february: "02",
   marzo: "03",
+  march: "03",
   abril: "04",
+  april: "04",
   mayo: "05",
+  may: "05",
   junio: "06",
+  june: "06",
   julio: "07",
+  july: "07",
   agosto: "08",
+  august: "08",
   septiembre: "09",
   setiembre: "09",
+  september: "09",
   octubre: "10",
+  october: "10",
   noviembre: "11",
+  november: "11",
   diciembre: "12",
+  december: "12",
 };
+
+const MES_NOMBRES = Object.keys(MESES).join("|");
+const HEADER_DATE_RE = new RegExp(
+  `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:de\\s+)?(${MES_NOMBRES})\\b|\\b(${MES_NOMBRES})\\s+(\\d{1,2})\\b`,
+  "i"
+);
 
 function pad(n: string | number) {
   return String(n).padStart(2, "0");
 }
 
-function findDate(line: string, roundDias: string[]): string | null {
+function matchRoundDayByMonth(day: string, mesNombre: string, roundDias: string[]): string | null {
+  const mesNum = MESES[mesNombre.toLowerCase()];
+  if (!mesNum) return null;
+  const dayPadded = pad(day);
+  return roundDias.find((d) => d.slice(5, 7) === mesNum && d.slice(8, 10) === dayPadded) ?? null;
+}
+
+// Fecha explícita en la propia línea (poco habitual en listados de
+// actuación, pero se soporta como formato alternativo): "8/8/2026",
+// "2026-08-08" o "8 de agosto".
+function findInlineDate(line: string, roundDias: string[]): string | null {
   const slash = line.match(DATE_SLASH_RE);
   if (slash) {
     const [, d, m, y] = slash;
@@ -47,27 +75,10 @@ function findDate(line: string, roundDias: string[]): string | null {
     const [, y, m, d] = iso;
     return `${y}-${pad(m)}-${pad(d)}`;
   }
-  // "8 de agosto" / "8 agosto"
-  const lower = line.toLowerCase();
-  for (const [mesNombre, mesNum] of Object.entries(MESES)) {
-    if (lower.includes(mesNombre)) {
-      const dayMatch = lower.match(/\b(\d{1,2})\b/);
-      if (dayMatch) {
-        const day = pad(dayMatch[1]);
-        const candidate = roundDias.find((d) => d.endsWith(`-${mesNum}-${day}`) || d.slice(8, 10) === day);
-        if (candidate) return candidate;
-      }
-    }
-  }
-  // Si la línea solo trae un número de día que coincide con uno de los días de la ronda
-  if (roundDias.length > 0) {
-    const dayOnly = line.match(/\b(\d{1,2})\b/);
-    if (dayOnly) {
-      const day = pad(dayOnly[1]);
-      const candidate = roundDias.find((d) => d.slice(8, 10) === day);
-      if (candidate) return candidate;
-    }
-  }
+  const m = line.match(HEADER_DATE_RE);
+  if (!m) return null;
+  if (m[1] && m[2]) return matchRoundDayByMonth(m[1], m[2], roundDias);
+  if (m[3] && m[4]) return matchRoundDayByMonth(m[4], m[3], roundDias);
   return null;
 }
 
@@ -90,14 +101,20 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const rows: ParsedAssignmentRow[] = [];
+  interface RawRow {
+    nombre: string;
+    email: string;
+    hora: string | null;
+    inlineDia: string | null;
+  }
+  const rawRows: RawRow[] = [];
 
   for (const line of lines) {
     const emailMatch = line.match(EMAIL_RE);
     if (!emailMatch) continue; // Solo nos interesan líneas con un correo (identifican a un participante)
 
     const email = emailMatch[0].toLowerCase();
-    const dia = findDate(line, roundDias);
+    const inlineDia = findInlineDate(line, roundDias);
     const hora = findTime(line);
 
     // El nombre es lo que queda en la línea tras quitar correo, fecha y hora
@@ -112,8 +129,24 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
 
     if (!nombre) nombre = email.split("@")[0];
 
-    rows.push({ nombre, email, dia, hora });
+    rawRows.push({ nombre, email, hora, inlineDia });
   }
 
-  return rows;
+  // Muchos listados de actuación agrupan por día ordenando cronológicamente
+  // dentro de cada uno (y las cabeceras de sección del PDF no siempre se
+  // extraen en el mismo orden que las filas). La señal más fiable de cambio
+  // de día es que la hora de actuación "retrocede" de una fila a la
+  // siguiente — vuelve a empezar por la mañana.
+  let segmentIndex = 0;
+  let horaAnterior: string | null = null;
+
+  return rawRows.map((r) => {
+    if (r.hora && horaAnterior && r.hora < horaAnterior) {
+      segmentIndex++;
+    }
+    if (r.hora) horaAnterior = r.hora;
+
+    const dia = r.inlineDia ?? roundDias[segmentIndex] ?? null;
+    return { nombre: r.nombre, email: r.email, dia, hora: r.hora };
+  });
 }

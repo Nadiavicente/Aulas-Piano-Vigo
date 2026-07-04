@@ -203,7 +203,9 @@ export function AsignacionClient({
               {summaries.map((s) => (
                 <tr key={s.participant_id} className="border-t border-ink/5">
                   <td className="py-1">{s.nombre}</td>
-                  <td className="py-1">{s.horas_asignadas}</td>
+                  <td className="py-1">
+                    {s.horas_asignadas} / {s.horas_totales_ronda}
+                  </td>
                   <td className="py-1">{s.email_enviado ? "✓ enviado" : "⚠ falló"}</td>
                   <td className="py-1 text-ink/50">{s.aviso ?? ""}</td>
                 </tr>
