@@ -4,13 +4,13 @@ import { getDailySummary } from "@/lib/reports";
 import { formatDiaCorto } from "@/lib/schedule";
 import type { RoundId } from "@/lib/types";
 
-function celda(horas: number, aulas: number, maxHorasDia: number) {
+function celda(horas: number, aulasNumeros: string[], maxHorasDia: number) {
   if (horas === 0) {
     return { texto: "—", clase: "text-ink/25" };
   }
   const completa = horas >= maxHorasDia;
   return {
-    texto: `${horas}h·${aulas}a`,
+    texto: `${horas}h · ${aulasNumeros.join(", ")}`,
     clase: completa ? "text-ink/70" : "text-red-700 font-semibold",
   };
 }
@@ -81,9 +81,9 @@ export default async function ResumenDiarioPage({
                     </td>
                     {summary.dias.map((dia) => {
                       const c = row.porDia[dia];
-                      const { texto, clase } = celda(c.horas, c.aulas, summary.maxHorasDia);
+                      const { texto, clase } = celda(c.horas, c.aulasNumeros, summary.maxHorasDia);
                       return (
-                        <td key={dia} className={`px-2 py-1 text-center tabular-nums ${clase}`}>
+                        <td key={dia} className={`px-2 py-1 text-center whitespace-nowrap tabular-nums ${clase}`}>
                           {texto}
                         </td>
                       );
@@ -102,8 +102,8 @@ export default async function ResumenDiarioPage({
           </div>
 
           <p className="text-xs text-ink/40">
-            Cada celda muestra horas·aulas asignadas ese día (p. ej. &quot;3·2&quot; = 3 horas repartidas en 2
-            aulas). En rojo, los días o el total por debajo del objetivo.
+            Cada celda muestra las horas y los números de aula asignados ese día (p. ej. &quot;4h · 12, 15&quot; =
+            4 horas repartidas entre las aulas 12 y 15). En rojo, los días o el total por debajo del objetivo.
           </p>
         </>
       )}

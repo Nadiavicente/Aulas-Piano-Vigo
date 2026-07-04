@@ -50,6 +50,7 @@ export async function getReportByRound(roundId: RoundId, dia?: string): Promise<
 export interface DailySummaryCell {
   horas: number;
   aulas: number;
+  aulasNumeros: string[];
 }
 
 export interface DailySummaryRow {
@@ -85,6 +86,8 @@ export async function getDailySummary(roundId: RoundId): Promise<DailySummary> {
   const bookings = await fetchAllRows<{ participant_id: string; dia: string; room_id: string }>((from, to) =>
     supabase.from("bookings").select("participant_id, dia, room_id").eq("round_id", roundId).range(from, to)
   );
+  const { data: roomsData } = await supabase.from("rooms").select("id, numero");
+  const numeroPorRoomId = new Map(((roomsData ?? []) as { id: string; numero: string }[]).map((r) => [r.id, r.numero]));
 
   const porParticipante = new Map<string, Record<string, { horas: number; aulas: Set<string> }>>();
   for (const b of bookings) {
@@ -102,8 +105,11 @@ export async function getDailySummary(roundId: RoundId): Promise<DailySummary> {
       let totalHoras = 0;
       for (const dia of round.dias) {
         const horas = dias[dia]?.horas ?? 0;
-        const aulas = dias[dia]?.aulas.size ?? 0;
-        porDia[dia] = { horas, aulas };
+        const aulaIds = dias[dia]?.aulas ?? new Set<string>();
+        const aulasNumeros = [...aulaIds]
+          .map((id) => numeroPorRoomId.get(id) ?? "?")
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        porDia[dia] = { horas, aulas: aulaIds.size, aulasNumeros };
         totalHoras += horas;
       }
       return { participant_id: p.id, nombre: p.nombre, correo: p.email, porDia, totalHoras };
