@@ -22,6 +22,28 @@ interface SendResult {
   error?: string;
 }
 
+// Resend limita a 10 peticiones/segundo. Al ejecutar una asignación por PDF
+// se pueden disparar ~200 envíos (bienvenida + confirmación) casi a la vez,
+// así que serializamos todos los envíos con un hueco mínimo entre ellos,
+// sin importar cuánta concurrencia use quien llama a sendAndLog.
+const MIN_INTERVALO_MS = 150; // ~6-7 envíos/segundo, con margen de sobra
+let ultimoEnvio = 0;
+let colaEnvios: Promise<void> = Promise.resolve();
+
+function conLimiteDeVelocidad<T>(fn: () => Promise<T>): Promise<T> {
+  const resultado = colaEnvios.then(async () => {
+    const espera = Math.max(0, ultimoEnvio + MIN_INTERVALO_MS - Date.now());
+    if (espera > 0) await new Promise((r) => setTimeout(r, espera));
+    ultimoEnvio = Date.now();
+    return fn();
+  });
+  colaEnvios = resultado.then(
+    () => undefined,
+    () => undefined
+  );
+  return resultado;
+}
+
 async function sendAndLog(params: {
   participantId: string | null;
   to: string;
@@ -35,13 +57,15 @@ async function sendAndLog(params: {
 
   try {
     const resend = getResend();
-    const { error } = await resend.emails.send({
-      from: getFromAddress(),
-      to: params.to,
-      subject: params.subject,
-      html: params.html,
-      attachments: params.attachments,
-    });
+    const { error } = await conLimiteDeVelocidad(() =>
+      resend.emails.send({
+        from: getFromAddress(),
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+        attachments: params.attachments,
+      })
+    );
 
     if (error) {
       await supabase.from("email_log").insert({
