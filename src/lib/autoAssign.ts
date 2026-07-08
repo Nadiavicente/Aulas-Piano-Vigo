@@ -2,7 +2,7 @@ import "server-only";
 import { getSupabaseAdmin, fetchAllRows } from "./supabase";
 import { getRound, getRoundRooms } from "./booking";
 import { listHourSlots } from "./schedule";
-import { sendBookingConfirmationEmail } from "./email";
+import { sendBookingConfirmationEmail, sendWelcomeEmail } from "./email";
 import { MinCostFlow } from "./minCostFlow";
 import type { RoundId, Room, Participant, Booking } from "./types";
 
@@ -219,7 +219,7 @@ function asignarAulasParaHoras(
 export async function applyAutoAssignment(
   roundId: RoundId,
   entries: AssignmentEntry[],
-  opts: { enviarCorreos?: boolean } = {}
+  opts: { enviarCorreos?: boolean; passwordsNuevos?: Map<string, string> } = {}
 ): Promise<AssignmentSummary[]> {
   const supabase = getSupabaseAdmin();
   const round = await getRound(roundId);
@@ -357,13 +357,25 @@ export async function applyAutoAssignment(
       .select("*")
       .eq("round_id", roundId)
       .eq("participant_id", entry.participant_id);
+    const bookings = (bookingsDelParticipante ?? []) as Booking[];
 
-    const result = await sendBookingConfirmationEmail(
-      participant,
-      round,
-      (bookingsDelParticipante ?? []) as Booking[],
-      rooms
-    );
+    // Si la cuenta se acaba de crear en este mismo lote (PDF con "crear
+    // automáticamente"), le mandamos un único correo con credenciales +
+    // horario de actuación + aulas ya asignadas, en vez de un correo de
+    // acceso y otro de confirmación por separado.
+    const passwordNueva = opts.passwordsNuevos?.get(entry.participant_id);
+    const result = passwordNueva
+      ? await sendWelcomeEmail(participant, passwordNueva, {
+          round,
+          bookings,
+          rooms,
+          performanceDia: entry.dia,
+          performanceHora: entry.hora,
+        })
+      : await sendBookingConfirmationEmail(participant, round, bookings, rooms, {
+          dia: entry.dia,
+          hora: entry.hora,
+        });
     summary.email_enviado = result.ok;
   });
 

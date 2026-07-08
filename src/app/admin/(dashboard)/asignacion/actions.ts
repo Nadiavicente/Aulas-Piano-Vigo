@@ -91,10 +91,15 @@ export async function confirmAssignment(
   await verifyAdminSession();
 
   let creados = 0;
+  // Contraseñas de las cuentas recién creadas en este lote: no se envían
+  // aquí (createParticipant con enviarCorreo:false), sino en un único
+  // correo de bienvenida ya con el horario y las aulas asignadas, una vez
+  // que applyAutoAssignment termine el reparto.
+  const passwordsNuevos = new Map<string, string>();
 
   // Filas sin participante emparejado pero con nombre y correo válidos: si
-  // se ha pedido, se les crea la cuenta ahora (con contraseña y email de
-  // bienvenida) antes de asignarles horas. Se hace con concurrencia
+  // se ha pedido, se les crea la cuenta ahora (sin enviar todavía el correo
+  // de bienvenida) antes de asignarles horas. Se hace con concurrencia
   // limitada para no tardar demasiado con lotes grandes (~100 filas).
   if (crearNoCoincidencias) {
     const pendientes = rows.filter(
@@ -106,16 +111,17 @@ export async function confirmAssignment(
       while (idx < pendientes.length) {
         const row = pendientes[idx++];
         try {
-          const { participant } = await createParticipant(
+          const { participant, password } = await createParticipant(
             {
               nombre: row.nombre || row.email.split("@")[0],
               email: row.email,
               rondas: [roundId],
             },
-            { enviarCorreo: enviarCorreos }
+            { enviarCorreo: false }
           );
           row.participant_id = participant.id;
           row.match_status = "matched";
+          passwordsNuevos.set(participant.id, password);
           creados++;
         } catch {
           // Puede fallar si el correo ya existe por alguna condición de carrera;
@@ -137,7 +143,7 @@ export async function confirmAssignment(
   }
 
   try {
-    const summaries = await applyAutoAssignment(roundId, entries, { enviarCorreos });
+    const summaries = await applyAutoAssignment(roundId, entries, { enviarCorreos, passwordsNuevos });
 
     const supabase = getSupabaseAdmin();
     await supabase
