@@ -78,7 +78,6 @@ export function DayGrid({
   }
 
   const totalSeleccionadas = Object.keys(selected).length;
-  const totalHoy = day.horas_reservadas_mias + totalSeleccionadas;
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-ink/10 p-3 sm:p-6">
@@ -86,13 +85,9 @@ export function DayGrid({
         <h3 className="font-serif text-lg font-semibold capitalize text-ink sm:text-xl">
           Selecciona tus horas — {formatDia(dia)}
         </h3>
-        <p className="text-sm text-ink/60">
-          Hasta {maxHorasDia}h en 1-4 aulas. Ya tienes {totalHoy} de {maxHorasDia}.
-        </p>
         <p className="mt-1 text-sm font-medium text-gold">
-          ⚠️ Debes pulsar &quot;Confirmar reserva del día&quot; en cada día por separado — si no,
-          esas horas no quedarán guardadas. Una vez confirmadas las aulas, no podrás cambiar esos
-          horarios tú mismo/a — contacta con la organización si necesitas modificarlos.
+          ⚠️ No podrás cambiar esos horarios tú mismo/a — contacta con la organización si
+          necesitas modificarlos.
         </p>
       </div>
 
