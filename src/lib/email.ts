@@ -112,6 +112,11 @@ function actuacionHtml(performanceDia: string | null | undefined, performanceHor
   )}</strong>.</p>`;
 }
 
+function pruebaPianoHtml(pruebaPianoHora: string | null | undefined): string {
+  if (!pruebaPianoHora) return "";
+  return `<p>Tu prueba de piano será a las <strong>${formatHora(pruebaPianoHora)}</strong>.</p>`;
+}
+
 function bookingsToHtml(bookings: Booking[], rooms: Room[]) {
   const roomsById = new Map(rooms.map((r) => [r.id, r]));
   const byDia = new Map<string, Booking[]>();
@@ -142,7 +147,7 @@ export async function sendBookingConfirmationEmail(
   round: Round,
   bookings: Booking[],
   rooms: Room[],
-  performance?: { dia: string | null; hora: string | null }
+  performance?: { dia: string | null; hora: string | null; pruebaPianoHora?: string | null }
 ): Promise<SendResult> {
   // Si no es la ronda por la que empieza su concurso (principal o junior),
   // es que ha avanzado de fase, así que añadimos una felicitación antes del
@@ -151,12 +156,14 @@ export async function sendBookingConfirmationEmail(
     ? `<p>¡Enhorabuena por tu paso a la <strong>${round.nombre}</strong> del concurso!</p>`
     : "";
   const actuacion = actuacionHtml(performance?.dia, performance?.hora);
+  const pruebaPiano = pruebaPianoHtml(performance?.pruebaPianoHora);
 
   const html = `
     <div style="font-family: sans-serif; color: #1b1310;">
       <h2>Reserva confirmada — ${round.nombre}</h2>
       <p>Hola ${participant.nombre},</p>
       ${felicitacion}
+      ${pruebaPiano}
       ${actuacion}
       <p>Tu reserva de aulas de estudio para <strong>${round.nombre}</strong> ha sido confirmada:</p>
       ${bookingsToHtml(bookings, rooms)}
@@ -180,6 +187,7 @@ export interface WelcomeScheduleInfo {
   rooms: Room[];
   performanceDia: string | null;
   performanceHora: string | null;
+  pruebaPianoHora?: string | null;
 }
 
 /**
@@ -202,6 +210,7 @@ export async function sendWelcomeEmail(
   const nombre = nombreCompeticion(schedule?.round.id ?? roundId ?? "primera");
 
   const actuacion = schedule ? actuacionHtml(schedule.performanceDia, schedule.performanceHora) : "";
+  const pruebaPiano = schedule ? pruebaPianoHtml(schedule.pruebaPianoHora) : "";
   const horarios = schedule
     ? `
       <p>Estas son tus aulas de estudio asignadas para la <strong>${schedule.round.nombre}</strong>:</p>
@@ -226,6 +235,7 @@ export async function sendWelcomeEmail(
       <p><a href="${loginUrl}" style="color:#c8a24a;">Entrar a la plataforma</a></p>
       <p>O escanea este código QR desde el móvil para entrar directamente:</p>
       <img src="cid:qrcode" alt="Código QR de acceso" width="180" height="180" />
+      ${pruebaPiano}
       ${actuacion}
       ${horarios}
       <p>${nombre}</p>

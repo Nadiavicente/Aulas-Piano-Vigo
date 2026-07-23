@@ -10,6 +10,7 @@ export interface AssignmentEntry {
   participant_id: string;
   dia: string; // día de actuación
   hora: string | null; // hora de actuación (informativa); null si no se pudo determinar
+  pruebaPianoHora?: string | null; // hora de la prueba de piano, solo en la ronda de entrada de cada concurso
 }
 
 export interface AssignmentSummary {
@@ -371,10 +372,12 @@ export async function applyAutoAssignment(
           rooms,
           performanceDia: entry.dia,
           performanceHora: entry.hora,
+          pruebaPianoHora: entry.pruebaPianoHora ?? null,
         })
       : await sendBookingConfirmationEmail(participant, round, bookings, rooms, {
           dia: entry.dia,
           hora: entry.hora,
+          pruebaPianoHora: entry.pruebaPianoHora ?? null,
         });
     summary.email_enviado = result.ok;
   });

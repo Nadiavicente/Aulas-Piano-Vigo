@@ -27,6 +27,7 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const TIME_RE = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\b/i;
+const TIME_RE_GLOBAL = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\b/gi;
 const DATE_SLASH_RE = /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/; // dd/mm/yyyy o dd-mm-yyyy
 const DATE_ISO_RE = /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/; // yyyy-mm-dd
 
@@ -102,14 +103,31 @@ function findTime(line: string): string | null {
   return `${pad(m[1])}:${m[2]}:00`;
 }
 
+// Todas las horas de la línea, en el orden en que aparecen (para las
+// rondas con columna de "prueba de piano" además de la de actuación).
+function findAllTimes(line: string): string[] {
+  return [...line.matchAll(TIME_RE_GLOBAL)].map((m) => `${pad(m[1])}:${m[2]}:00`);
+}
+
 export interface ParsedAssignmentRow {
   nombre: string;
   email: string;
   dia: string | null;
   hora: string | null;
+  pruebaPianoHora: string | null;
 }
 
-export function parseAssignmentText(text: string, roundDias: string[]): ParsedAssignmentRow[] {
+/**
+ * `conPruebaDePiano` activa la detección de una segunda hora por fila (la
+ * de la prueba de piano, antes de la hora de actuación) — solo aplica a la
+ * ronda de entrada de cada concurso (1ª Ronda / Semifinal Junior); en el
+ * resto de rondas cada fila solo trae una hora, como hasta ahora.
+ */
+export function parseAssignmentText(
+  text: string,
+  roundDias: string[],
+  conPruebaDePiano = false
+): ParsedAssignmentRow[] {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -119,6 +137,7 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
     nombre: string;
     email: string;
     hora: string | null;
+    pruebaPianoHora: string | null;
     inlineDia: string | null;
   }
   const rawRows: RawRow[] = [];
@@ -129,15 +148,24 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
 
     const email = emailMatch[0].toLowerCase();
     const inlineDia = findInlineDate(line, roundDias);
-    const hora = findTime(line);
 
-    // El nombre es lo que queda en la línea tras quitar correo, fecha, hora,
-    // el número de orden ("Sec.") inicial y puntuación suelta.
+    let hora: string | null;
+    let pruebaPianoHora: string | null = null;
+    if (conPruebaDePiano) {
+      const todasLasHoras = findAllTimes(line);
+      pruebaPianoHora = todasLasHoras[0] ?? null;
+      hora = todasLasHoras[1] ?? null;
+    } else {
+      hora = findTime(line);
+    }
+
+    // El nombre es lo que queda en la línea tras quitar correo, fecha,
+    // todas las horas, el número de orden ("Sec.") inicial y puntuación suelta.
     let nombre = line
       .replace(EMAIL_RE, "")
       .replace(DATE_SLASH_RE, "")
       .replace(DATE_ISO_RE, "")
-      .replace(TIME_RE, "")
+      .replace(TIME_RE_GLOBAL, "")
       .replace(/[,;|]+/g, " ")
       .replace(/\s{2,}/g, " ")
       .trim()
@@ -145,7 +173,7 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
 
     if (!nombre) nombre = email.split("@")[0];
 
-    rawRows.push({ nombre, email, hora, inlineDia });
+    rawRows.push({ nombre, email, hora, pruebaPianoHora, inlineDia });
   }
 
   // Muchos listados de actuación agrupan por día ordenando cronológicamente
@@ -163,6 +191,6 @@ export function parseAssignmentText(text: string, roundDias: string[]): ParsedAs
     if (r.hora) horaAnterior = r.hora;
 
     const dia = r.inlineDia ?? roundDias[segmentIndex] ?? null;
-    return { nombre: r.nombre, email: r.email, dia, hora: r.hora };
+    return { nombre: r.nombre, email: r.email, dia, hora: r.hora, pruebaPianoHora: r.pruebaPianoHora };
   });
 }

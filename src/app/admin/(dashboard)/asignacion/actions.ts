@@ -6,6 +6,7 @@ import { getRound } from "@/lib/booking";
 import { createParticipant } from "@/lib/admin";
 import { extractPdfText, parseAssignmentText } from "@/lib/pdfParse";
 import { applyAutoAssignment, type AssignmentEntry, type AssignmentSummary } from "@/lib/autoAssign";
+import { esRondaInicial } from "@/lib/competition";
 import type { RoundId, PdfAssignmentRow } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 
@@ -36,7 +37,10 @@ export async function uploadAndParsePdf(formData: FormData): Promise<ParseResult
     return { ok: false, error: "No se pudo leer el PDF. Comprueba que el archivo no esté dañado." };
   }
 
-  const parsed = parseAssignmentText(text, round.dias);
+  // Solo la ronda de entrada de cada concurso (1ª Ronda / Semifinal Junior)
+  // trae una columna extra con la hora de la prueba de piano, antes de la
+  // hora de actuación.
+  const parsed = parseAssignmentText(text, round.dias, esRondaInicial(roundId));
 
   const supabase = getSupabaseAdmin();
   const { data: participants } = await supabase.from("participants").select("id, email");
@@ -49,6 +53,7 @@ export async function uploadAndParsePdf(formData: FormData): Promise<ParseResult
       email: row.email,
       dia: row.dia,
       hora: row.hora,
+      pruebaPianoHora: row.pruebaPianoHora,
       participant_id,
       match_status: participant_id ? "matched" : "no_match",
     };
@@ -136,7 +141,12 @@ export async function confirmAssignment(
 
   const entries: AssignmentEntry[] = rows
     .filter((r) => r.participant_id && r.dia)
-    .map((r) => ({ participant_id: r.participant_id as string, dia: r.dia as string, hora: r.hora }));
+    .map((r) => ({
+      participant_id: r.participant_id as string,
+      dia: r.dia as string,
+      hora: r.hora,
+      pruebaPianoHora: r.pruebaPianoHora,
+    }));
 
   if (entries.length === 0) {
     return { ok: false, error: "No hay ninguna fila válida (con participante y día) para asignar." };

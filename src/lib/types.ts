@@ -90,6 +90,7 @@ export interface PdfAssignmentRow {
   email: string
   dia: string | null
   hora: string | null
+  pruebaPianoHora: string | null
   participant_id: string | null
   match_status: 'matched' | 'no_match' | 'ambiguous'
 }
