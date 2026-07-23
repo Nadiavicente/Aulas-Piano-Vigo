@@ -3,7 +3,8 @@ import { Resend } from "resend";
 import { getSupabaseAdmin } from "./supabase";
 import { formatDia, formatHora } from "./schedule";
 import { generateLoginQrPngBuffer, getLoginUrl } from "./qrcode";
-import type { Booking, Room, Round, Participant } from "./types";
+import { nombreCompeticion, esRondaInicial } from "./competition";
+import type { Booking, Room, Round, Participant, RoundId } from "./types";
 
 function getResend() {
   const key = process.env.RESEND_API_KEY;
@@ -143,13 +144,12 @@ export async function sendBookingConfirmationEmail(
   rooms: Room[],
   performance?: { dia: string | null; hora: string | null }
 ): Promise<SendResult> {
-  // A partir de semifinales ya no es la primera ronda del participante, así
-  // que añadimos una felicitación por haber avanzado de fase antes del
+  // Si no es la ronda por la que empieza su concurso (principal o junior),
+  // es que ha avanzado de fase, así que añadimos una felicitación antes del
   // detalle de la reserva.
-  const felicitacion =
-    round.id !== "primera"
-      ? `<p>¡Enhorabuena por tu paso a la <strong>${round.nombre}</strong> del concurso!</p>`
-      : "";
+  const felicitacion = !esRondaInicial(round.id)
+    ? `<p>¡Enhorabuena por tu paso a la <strong>${round.nombre}</strong> del concurso!</p>`
+    : "";
   const actuacion = actuacionHtml(performance?.dia, performance?.hora);
 
   const html = `
@@ -160,7 +160,7 @@ export async function sendBookingConfirmationEmail(
       ${actuacion}
       <p>Tu reserva de aulas de estudio para <strong>${round.nombre}</strong> ha sido confirmada:</p>
       ${bookingsToHtml(bookings, rooms)}
-      <p>X Concurso Internacional de Piano Ciudad de Vigo</p>
+      <p>${nombreCompeticion(round.id)}</p>
     </div>
   `;
 
@@ -188,15 +188,18 @@ export interface WelcomeScheduleInfo {
  * actuación, para mandar un único correo con todo (credenciales + horario +
  * aulas) en vez de uno de acceso y otro aparte de confirmación. Si se crea
  * la cuenta a mano desde el panel (sin ronda ni horas todavía), `schedule`
- * se omite y el correo es solo de acceso, como antes.
+ * se omite y el correo es solo de acceso, como antes; `roundId` decide en
+ * ese caso si el nombre del concurso mostrado es el principal o el Junior.
  */
 export async function sendWelcomeEmail(
   participant: Participant,
   password: string,
-  schedule?: WelcomeScheduleInfo
+  schedule?: WelcomeScheduleInfo,
+  roundId?: RoundId
 ): Promise<SendResult> {
   const loginUrl = getLoginUrl(participant.email);
   const qrBuffer = await generateLoginQrPngBuffer(participant.email);
+  const nombre = nombreCompeticion(schedule?.round.id ?? roundId ?? "primera");
 
   const actuacion = schedule ? actuacionHtml(schedule.performanceDia, schedule.performanceHora) : "";
   const horarios = schedule
@@ -213,7 +216,7 @@ export async function sendWelcomeEmail(
 
   const html = `
     <div style="font-family: sans-serif; color: #1b1310;">
-      <h2>Acceso al X Concurso Internacional de Piano Ciudad de Vigo</h2>
+      <h2>Acceso al ${nombre}</h2>
       <p>Hola ${participant.nombre},</p>
       <p>Ya puedes acceder a la plataforma de reserva de aulas de estudio con estos datos:</p>
       <p>
@@ -225,14 +228,14 @@ export async function sendWelcomeEmail(
       <img src="cid:qrcode" alt="Código QR de acceso" width="180" height="180" />
       ${actuacion}
       ${horarios}
-      <p>X Concurso Internacional de Piano Ciudad de Vigo</p>
+      <p>${nombre}</p>
     </div>
   `;
 
   return sendAndLog({
     participantId: participant.id,
     to: participant.email,
-    subject: "Acceso a la plataforma de reservas — X Concurso Internacional de Piano Ciudad de Vigo",
+    subject: `Acceso a la plataforma de reservas — ${nombre}`,
     html,
     type: "credentials",
     payload: { reason: "participant_created" },

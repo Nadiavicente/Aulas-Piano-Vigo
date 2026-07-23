@@ -1,4 +1,4 @@
-export type RoundId = 'primera' | 'semifinal' | 'final'
+export type RoundId = 'primera' | 'semifinal' | 'final' | 'junior_semifinal' | 'junior_final'
 
 export type TipoPiano = 'cola' | 'pared'
 export type Motivo = 'jurado' | 'admin'

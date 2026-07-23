@@ -169,7 +169,8 @@ export async function createParticipant(
   // participante si falla; sendWelcomeEmail ya registra el fallo en email_log.
   // En modo prueba (opts.enviarCorreo === false) nos lo saltamos por
   // completo, para poder probar con datos reales sin avisar a nadie.
-  const emailResult = opts.enviarCorreo === false ? { ok: false } : await sendWelcomeEmail(participant, password);
+  const emailResult =
+    opts.enviarCorreo === false ? { ok: false } : await sendWelcomeEmail(participant, password, undefined, params.rondas[0]);
 
   return { participant, password, emailEnviado: emailResult.ok };
 }
