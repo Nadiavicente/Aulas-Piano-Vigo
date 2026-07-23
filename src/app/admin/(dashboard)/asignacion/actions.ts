@@ -153,6 +153,33 @@ export async function confirmAssignment(
   }
 
   try {
+    // Los participantes recién creados en este lote ya quedan clasificados
+    // para esta ronda (createParticipant se lo asigna al alta), pero los que
+    // ya existían de antes (emparejados por correo) pueden no estarlo
+    // todavía — por ejemplo, alguien que ya tenía cuenta de la 1ª Ronda y
+    // ahora se le asignan horas de Semifinal Junior. Sin esto, la reserva se
+    // crea igualmente pero el participante no vería esa ronda en su propio
+    // panel ni aparecería en los informes filtrados por ronda.
+    const participantIds = [...new Set(entries.map((e) => e.participant_id))];
+    const supabaseParaClasificar = getSupabaseAdmin();
+    const { data: participantesActuales } = await supabaseParaClasificar
+      .from("participants")
+      .select("id, rondas_clasificado")
+      .in("id", participantIds);
+    const porClasificar = (participantesActuales ?? []).filter(
+      (p) => !p.rondas_clasificado.includes(roundId)
+    );
+    if (porClasificar.length > 0) {
+      await Promise.all(
+        porClasificar.map((p) =>
+          supabaseParaClasificar
+            .from("participants")
+            .update({ rondas_clasificado: [...p.rondas_clasificado, roundId] })
+            .eq("id", p.id)
+        )
+      );
+    }
+
     const summaries = await applyAutoAssignment(roundId, entries, { enviarCorreos, passwordsNuevos });
 
     const supabase = getSupabaseAdmin();
